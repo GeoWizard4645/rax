@@ -1,0 +1,17 @@
+name = "rax-super-suite"
+compatibility_date = "2026-09-01"
+pages_build_output_dir = "./dist"
+
+# KV holds the rolling market history (hourly snapshots used for 7-day baselines).
+# Create it once:  npx wrangler kv namespace create CACHE
+# then paste the returned id below (or bind it in the Pages dashboard:
+# Settings -> Bindings -> KV namespace, variable name CACHE).
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "<paste-namespace-id>"
+
+[vars]
+# Optional upstream configuration — see README "Configuration".
+# REAL_API_BASE = "https://<real-app-api-host>"
+# REAL_USER_AGENT = "RealApp/1.0 (iOS; Build 2026.1)"
+# CDN_ALLOWED_HOSTS = "cdn.example.com,images.example.com"

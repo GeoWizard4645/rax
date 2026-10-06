@@ -1,0 +1,35 @@
+{
+  "name": "rax-super-suite",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RealApp Super-Suite \u2014 analytics & scouting terminal (rax.vivaanshahani.com)",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p functions",
+    "test": "vitest run",
+    "preview": "npm run build && wrangler pages dev dist --kv CACHE --port 8788",
+    "pages:dev": "wrangler pages dev dist --kv CACHE --port 8788"
+  },
+  "dependencies": {
+    "lucide-react": "^1.52.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.6",
+    "recharts": "^2.15.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261005.1",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^6.1.2",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.29",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.147.0"
+  }
+}
