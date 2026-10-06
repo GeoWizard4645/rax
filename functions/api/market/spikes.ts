@@ -1,6 +1,7 @@
 /**
  * Market intelligence  —  /api/market/spikes[?sport=NFL]            spike screener + fair-value model
  *                         /api/market/spikes?candles=<playerKey>&window=24h|7d|30d   OHLC + volume
+ *                         /api/market/spikes?forecastInputs=<playerKey>   inputs for the browser-side Monte Carlo (Tab 3)
  *
  * Computed at the edge from the KV history written by /api/scout/auctions (live), or from the
  * deterministic SAMPLE series when no history exists yet (source: "sample").
@@ -8,7 +9,7 @@
 import type { CandlesResponse, PlayerSeries, SpikesResponse } from '../../../src/types/market';
 import type { Sport } from '../../../src/types/real';
 import { buildCandles, SPORTS, type CandleWindow } from '../../../shared/formulas';
-import { summarizeMarket } from '../../../shared/market';
+import { buildForecastInputs, summarizeMarket } from '../../../shared/market';
 import { sampleCatalysts, sampleSeries } from '../../../shared/sample';
 import { cached, err, json, preflight, type Env } from '../../_lib/http';
 import { docToSeries, loadHistory } from '../../_lib/history';
@@ -31,6 +32,16 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
   const candleKey = params.get('candles');
   const sport = params.get('sport')?.toUpperCase();
   if (sport && !SPORTS.includes(sport as Sport)) return err(400, 'bad_sport', 'Unknown sport.');
+
+  const inputsKey = params.get('forecastInputs');
+  if (inputsKey) {
+    return cached(`market/forecast-inputs/${inputsKey}`, 60, async () => {
+      const now = Date.now();
+      const { series, source } = await seriesFor(env, now);
+      const inp = buildForecastInputs(series, inputsKey, now, source === 'sample' ? (sampleCatalysts(now)[inputsKey] ?? []) : [], source);
+      return inp ? json(inp) : err(404, 'unknown_player', 'No market history for that player.');
+    }, (p) => waitUntil(p));
+  }
 
   if (candleKey) {
     const win = (params.get('window') || '7d') as CandleWindow;

@@ -17,32 +17,14 @@ import type {
   SeriesPoint,
 } from '../src/types/market';
 import { median, perRatingPrice, playerKey, RARITY_MULT } from './formulas';
+import { rng, xfnv1a } from './rng';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
 /* ------------------------------ rng ------------------------------ */
 
-function xfnv1a(str: string): number {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-/** mulberry32 seeded from a string. */
-export function rng(seed: string): () => number {
-  let a = xfnv1a(seed);
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export { rng };
 
 const gauss = (r: () => number) => {
   const u = Math.max(r(), 1e-9);
@@ -262,6 +244,7 @@ export function sampleAuctions(now: number, series: PlayerSeries[] = sampleSerie
       playerName: p.name,
       sport: p.sport,
       rarity: p.rarity,
+      cardRating: p.rating,
       copiesOwned: 1 + Math.floor(rc() * 5),
       bids7d,
       buys7d,

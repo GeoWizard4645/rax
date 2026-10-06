@@ -66,6 +66,7 @@ export function deriveContenders(bids: AuctionBid[], now: number): ContenderActi
         playerName: f.playerName,
         sport: f.sport,
         rarity: f.rarity,
+        cardRating: f.cardRating,
         copiesOwned: 0, // not exposed by the feed
         bids7d: g.length,
         buys7d: g.filter((b) => b.status === 'closed').length,

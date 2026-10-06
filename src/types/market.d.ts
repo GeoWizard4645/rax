@@ -30,6 +30,9 @@ export interface ContenderActivity {
   sport: Sport;
   /** Rarity tier they currently hold of this player. */
   rarity: Rarity;
+  /** Rating of the card they are chasing (used to turn a per-rating price into Rax). */
+  cardRating: number;
+  /** Copies they hold; 0 when the feed doesn't expose it. */
   copiesOwned: number;
   bids7d: number;
   buys7d: number;
@@ -138,4 +141,30 @@ export interface CandlesResponse {
   key: string;
   window: '24h' | '7d' | '30d';
   candles: Array<{ t: number; open: number; high: number; low: number; close: number; volume: number }>;
+}
+
+/** Everything the browser-side Monte Carlo needs about one player, assembled at the edge. */
+export interface ForecastInputs {
+  source: DataSource;
+  key: string;
+  playerName: string;
+  sport: Sport;
+  rarity: Rarity;
+  rating: number;
+  /** Latest per-rating price (Rax per rating point). */
+  currentPpr: number;
+  /** Daily per-rating closes and volumes, oldest first (up to 30 days). */
+  daily: Array<{ t: number; ppr: number; volume: number }>;
+  /** Similar cards (same sport + rarity where possible), excluding this player. */
+  peers: {
+    n: number;
+    scope: 'sport+rarity' | 'rarity' | 'all' | 'none';
+    /** Pooled daily log-return standard deviation of per-rating price. */
+    sdLogRet: number;
+    medianPpr: number;
+    medianVolPerDay: number;
+  };
+  catalysts: CatalystTag[];
+  /** Current velocity-spike z-score (0 when not spiking). */
+  spikeZ: number;
 }

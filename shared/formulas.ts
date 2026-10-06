@@ -70,6 +70,15 @@ export function buildPitch(i: PitchInput): string {
   );
 }
 
+/** Pitch for a repeat contender (Tab 2): priced at what they've been paying per rating. */
+export function buildContenderPitch(i: { playerName: string; targetPrice: number; cardRating: number }): string {
+  return (
+    `Saw you've been bidding on ${i.playerName} all week. ` +
+    `I will sell you mine right now for ${Math.round(i.targetPrice).toLocaleString('en-US')} Rax. ` +
+    `That's a ${perRatingPrice(i.targetPrice, i.cardRating).toFixed(2)}/1 price per rating, right in line with what you've been paying. Drop an offer on my profile.`
+  );
+}
+
 export const realLink = (username: string) => `https://realapp.link/u/${encodeURIComponent(username)}`;
 export const realDeepLink = (userId: string) => `realapp://user/${encodeURIComponent(userId)}/chat`;
 

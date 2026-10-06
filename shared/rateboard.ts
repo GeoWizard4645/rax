@@ -259,6 +259,19 @@ export function checkNewOffer(
   return { ok: true, player, rate };
 }
 
+/**
+ * Which option the rate dropdown should show, given its current value and the player's floor
+ * (mirrors Rateboard's rateOptions/applyMinimumToForm): a rate below the floor is bumped up to it, and a
+ * rate that isn't one of the preset tiers falls to "custom" so it is never silently snapped elsewhere.
+ */
+export function resolveRateSel(current: string, floor?: number | null): string {
+  const base = current === 'custom' ? 'custom' : floor ? Math.max(+current || 0, floor) : +current || 20;
+  const usable = usableRates(floor);
+  if (base !== 'custom' && usable.includes(base)) return String(base);
+  if (base === 'custom' || (+base > 0 && !RATES.includes(+base))) return 'custom';
+  return String(usable[0] ?? 'custom');
+}
+
 /** Resolve a rate dropdown + custom box to a number (NaN when unusable). */
 export function readRate(selValue: string, customValue: string, floor?: number | null): number {
   if (selValue !== 'custom') return +selValue;

@@ -184,3 +184,21 @@ describe('outbound link', () => {
     expect(rateboardTradeUrl('abc 1', 'NFL')).toBe('https://rateboard-cgi.pages.dev/?card=abc+1&action=trade&sport=NFL');
   });
 });
+
+import { resolveRateSel } from '../../shared/rateboard';
+describe('resolveRateSel (rate dropdown behaviour)', () => {
+  it('keeps a valid preset and defaults to 20', () => {
+    expect(resolveRateSel('25')).toBe('25');
+    expect(resolveRateSel('')).toBe('20');
+  });
+  it('bumps below-floor selections up to the floor', () => {
+    expect(resolveRateSel('20', 35)).toBe('35');
+    expect(resolveRateSel('50', 35)).toBe('50');
+  });
+  it('falls to custom when the floor is not a preset tier', () => {
+    expect(resolveRateSel('20', 37)).toBe('custom');
+  });
+  it('stays custom once custom', () => {
+    expect(resolveRateSel('custom', 35)).toBe('custom');
+  });
+});
