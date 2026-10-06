@@ -1,0 +1,17 @@
+HTTP/2 200 
+date: Tue, 06 Oct 2026 01:58:47 GMT
+content-type: application/json; charset=utf-8
+content-length: 308891
+access-control-allow-origin: *
+access-control-allow-headers: Content-Type
+access-control-allow-methods: GET, POST, OPTIONS
+access-control-max-age: 86400
+x-credit: Rateboard - https://rateboard-cgi.pages.dev
+x-data-source: rateboard-cgi.pages.dev
+x-cache: MISS
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=kpLPQegtwoUWcJW6YEqb6rfdjuJAD6d%2F90%2FIU%2BB4%2BTVulG3hZfep78Z9uIWkby%2F%2F0O%2BUHWC3gwZZaz4v%2BTwLkmSASmYA6ZjehLn4xEOX9yrHcqHN7dZ%2BbRKJ41niL0tb7ZvFWCCwQhCmrU1x"}]}
+nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+server: cloudflare
+cf-ray: a461101c1f791b04-ORD
+alt-svc: h3=":443"; ma=86400
+
