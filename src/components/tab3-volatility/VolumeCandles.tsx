@@ -34,7 +34,9 @@ function Candle({ x = 0, y = 0, width = 0, height = 0, payload }: CandleShapePro
 
 const fmtT = (t: number, w: Win) => {
   const d = new Date(t);
-  return w === '24h' ? d.toLocaleTimeString([], { hour: 'numeric' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  if (w === '24h') return d.toLocaleTimeString([], { hour: 'numeric' });
+  if (w === '7d') return `${d.toLocaleDateString([], { weekday: 'short' })} ${d.toLocaleTimeString([], { hour: 'numeric' })}`;
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
 /** Price history (OHLC) + volume for one player over 24h / 7d / 30d. */

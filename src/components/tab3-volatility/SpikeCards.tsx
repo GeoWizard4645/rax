@@ -36,7 +36,7 @@ export default function SpikeCards({ spikes, selected, onSelect }: { spikes: Spi
               </div>
             </div>
             <span className="chip-amber num" title="Standard deviations above the 7-day baseline">
-              <Flame size={11} /> {dec(s.z, 1)}σ
+              <Flame size={11} /> {s.z > 20 ? '20σ+' : `${dec(s.z, 1)}σ`}
             </span>
           </div>
           <div className="num mt-2 grid grid-cols-2 gap-2 text-xs">
