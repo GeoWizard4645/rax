@@ -8,7 +8,7 @@ import type { QuadGame } from '../../../shared/sample';
 import { sampleQuads } from '../../../shared/sample';
 import { ESPN_PATH, espnDate, normalizeEspn } from '../../../shared/schedule';
 import type { Sport } from '../../../src/types/real';
-import { cached, err, json, OUR_UA, preflight, type Env } from '../../_lib/http';
+import { cached, err, json, preflight, type Env } from '../../_lib/http';
 
 export interface ScheduleResponse {
   source: 'live' | 'sample';
@@ -31,7 +31,8 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
       for (let d = 0; d < days; d++) {
         const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${espnDate(now, d)}`;
         jobs.push(
-          fetch(url, { headers: { Accept: 'application/json', 'User-Agent': OUR_UA } })
+          // No custom User-Agent: ESPN's CDN rejects unfamiliar agent strings (403) but serves default clients.
+          fetch(url, { headers: { Accept: 'application/json' } })
             .then((r) => (r.ok ? r.json() : null))
             .then((j) => normalizeEspn(sport, j))
             .catch(() => []),

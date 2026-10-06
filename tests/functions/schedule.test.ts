@@ -51,8 +51,10 @@ describe('/api/intel/schedule', () => {
 
   it('returns live games, drops finals, and sorts by start', async () => {
     const calls: string[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (u: any) => {
+    const headersSeen: any[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: any, init?: any) => {
       calls.push(String(u));
+      headersSeen.push(init?.headers ?? {});
       const body = String(u).includes('football/nfl')
         ? { events: [ev({ id: 'late', date: '2026-10-07T00:00Z' }).id && { ...ev(), id: 'late', date: '2026-10-08T00:00Z' }, { ...ev(), id: 'early', date: '2026-10-06T00:00Z' }, { ...ev(), id: 'done', status: { type: { state: 'post' } } }] }
         : { events: [] };
@@ -63,6 +65,8 @@ describe('/api/intel/schedule', () => {
     expect(b.games.map((g: any) => g.id)).toEqual(['espn-NFL-early', 'espn-NFL-late']);
     expect(calls).toHaveLength(6); // one scoreboard per sport for 1 day
     expect(calls.every((u) => u.startsWith('https://site.api.espn.com/apis/site/v2/sports/'))).toBe(true);
+    // ESPN's CDN 403s unfamiliar User-Agent strings, so we must not set one.
+    expect(headersSeen.every((h) => !Object.keys(h).some((k) => k.toLowerCase() === 'user-agent'))).toBe(true);
   });
 
   it('falls back to labelled sample matchups if ESPN is down', async () => {
