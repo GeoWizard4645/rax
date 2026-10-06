@@ -8,8 +8,8 @@ An unofficial analytics and scouting terminal for Real App cards, built for **Cl
 | 2 · Scout | Overpriced-auction radar, proactive scout (DM pitch generator), repeat contenders | Live feed if configured, else **sample** |
 | 3 · Volatility | Spike screener, fair-value scatter, candles, **Monte Carlo projections** | Live history if configured, else **sample** |
 | 4 · OTD Rax | 2-claim optimizer, ROI / break-even, comparison, catalog, dataset import | **Sample** until you import games |
-| 5 · Portfolio | Earnings audit, CDN asset downloader | Inputs you provide / CDN you allowlist |
-| 6 · Quads | Pacing, poll analytics, payout reference, squad board | **Sample** schedule/polls; local squad board |
+| 5 · Portfolio | Earnings audit, CDN asset downloader | Public CDN (`media.realapp.com`) + inputs you provide |
+| 6 · Quads | Pacing, poll analytics, payout reference, squad board | **Live** schedule (ESPN public scoreboards); **sample** polls |
 
 Every panel that can show synthetic data carries a **SAMPLE DATA** badge. Nothing synthetic is presented as live.
 
@@ -38,10 +38,10 @@ Run `npm run build && npm run pages:dev` in one terminal and `npm run dev` in an
 
 | Variable | Purpose |
 |---|---|
-| `REAL_API_BASE` | https base URL of Real's API; enables `/api/proxy/real` (profile header) |
-| `REAL_USER_AGENT` | override the mobile-client UA (default `RealApp/1.0 (iOS; Build 2026.1)`) |
-| `AUCTIONS_ENDPOINT` | path under `REAL_API_BASE` of the auctions feed; turns Tab 2/3 live |
-| `CDN_ALLOWED_HOSTS` | comma-separated CDN hostnames (`*.` wildcard ok); enables the asset downloader |
+| `CDN_ALLOWED_HOSTS` | CDN hostnames the downloader may fetch (set to `media.realapp.com` in `wrangler.toml`) |
+| `REAL_API_BASE` | an **authorised** upstream for `/api/proxy/real` — Real's own API can't be called anonymously, see [docs/DATA-SOURCES.md](docs/DATA-SOURCES.md) |
+| `AUCTIONS_ENDPOINT` | path under `REAL_API_BASE` of an auctions feed; turns Tab 2/3 live |
+| `REAL_USER_AGENT` | override the UA sent upstream (default: an honest `rax-super-suite/…`) |
 
 Until these are set the corresponding features show a clear "not configured" state or fall back to labelled sample data.
 
@@ -53,10 +53,11 @@ shared/         pure logic used by both browser and edge: formulas, Rateboard ru
                 OTD engine, quads, season calendar, Monte Carlo, deterministic sample data
 functions/api/
   proxy/rateboard.ts   pass-through to rateboard-cgi.pages.dev (allowlisted, sanitised)
-  proxy/real.ts        generic Real API proxy (configurable, allowlisted, cached)
+  proxy/real.ts        generic proxy for an *authorised* upstream (allowlisted, cached)
   proxy/cdn.ts         image proxy for downloads (host allowlist, https only, size cap)
   scout/auctions.ts    per-rating price + 7-day baselines + repeat contenders
   market/spikes.ts     spike screen, fair-value model, candles, forecast inputs
+  intel/schedule.ts    live game schedule from ESPN public scoreboards (Tab 6)
 ```
 
 **Caching.** Responses are cached with Cloudflare's Cache API (free, no write quota) — 15 s for the Rateboard board, 60 s for live games, 300 s for profiles. Workers **KV** is used only for the rolling market-history document (hourly points for 7 days, daily to 30), written at most every 10 minutes. This deviates from "cache everything in KV" on purpose: the free tier allows ~1,000 KV writes/day, which per-response caching would exhaust.
@@ -84,8 +85,8 @@ Seeded stochastic simulation — **no machine learning**. See `shared/montecarlo
 
 ## Known limits (please read)
 
-- **Real's private API paths are unverified.** The spec's endpoints are placeholders; nothing here pretends to know the real schema. `normalizeAuction` and `normalizeProfile` are tolerant guesses — adjust once you've seen real responses. Mimicking the mobile app's User-Agent to reach a private API may violate Real's terms; that's your call.
-- **No live feed ⇒ sample data** for Tabs 2–4 and 6 (clearly badged). Tab 4's real OTD database isn't bundled — import a CSV/JSON.
+- **Real's own API can't be used anonymously.** It requires a login session, a signed per-request token and a Turnstile token (see [docs/DATA-SOURCES.md](docs/DATA-SOURCES.md) for the full findings and ways forward). The spec's spoofed-User-Agent approach would not work, and forging those tokens would be circumventing access controls, so it isn't done.
+- **No live feed ⇒ sample data** for Tabs 2–4 and the poll percentages in 6 (clearly badged). Tab 4's real OTD database isn't bundled — import a CSV/JSON.
 - Rateboard ignores the `?card=…&action=trade` parameters (it just opens the site), per its current source.
 - Rateboard's server does not authenticate writes (it trusts the `user` field) and publishes password hashes on a public endpoint. This wrapper doesn't rely on or exploit either; it's worth telling its owner.
 - Get Rateboard's blessing: this wrapper sends your users' traffic to their backend.

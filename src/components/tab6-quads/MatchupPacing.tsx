@@ -26,15 +26,16 @@ export default function MatchupPacing({ games, selected, onSelect }: { games: Qu
         <table className="tbl">
           <thead><tr><th>Matchup</th><th>Broadcast</th><th>Kickoff</th><th className="r">Pace</th><th className="r">Polls / game</th><th style={{ minWidth: 180 }}>Karma opportunity</th></tr></thead>
           <tbody>
+            {rows.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-sm text-muted">No games match — try turning off "marquee only".</td></tr>}
             {rows.map((g) => {
               const k = karmaOpportunity(g);
               return (
                 <tr key={g.id} className={`cursor-pointer ${selected === g.id ? '!bg-action/10' : ''}`} onClick={() => onSelect(g.id)}>
-                  <td><span className="font-medium">{g.away} @ {g.home}</span> <span className="chip-muted">{g.sport}</span>{g.marquee && <span className="chip-amber ml-1">marquee</span>}<div className="text-[11px] text-muted">{g.title}</div></td>
+                  <td><span className="font-medium">{g.away} @ {g.home}</span> <span className="chip-muted">{g.sport}</span>{g.marquee && <span className="chip-amber ml-1">marquee</span>}{g.status === 'live' && <span className="chip-emerald ml-1">live</span>}<div className="text-[11px] text-muted">{g.title}</div></td>
                   <td className="text-muted">{g.broadcast}</td>
                   <td className="num text-xs">{new Date(g.startsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</td>
-                  <td className="r num">{g.pace.toFixed(2)}×</td>
-                  <td className="r num">{g.pollsPerGame}</td>
+                  <td className="r num" title={g.estimated ? 'Estimated from sport averages' : undefined}>{g.estimated && '~'}{g.pace.toFixed(2)}×</td>
+                  <td className="r num" title={g.estimated ? 'Estimated from sport averages' : undefined}>{g.estimated && '~'}{g.pollsPerGame}</td>
                   <td>
                     <div className="flex items-center gap-2"><span className="num w-10 text-right font-semibold text-emerald">{k}</span><div className="h-2 flex-1 rounded bg-base"><div className="h-2 rounded bg-emerald" style={{ width: `${(k / max) * 100}%` }} /></div></div>
                   </td>
@@ -44,7 +45,7 @@ export default function MatchupPacing({ games, selected, onSelect }: { games: Qu
           </tbody>
         </table>
       </div>
-      <div className="border-t border-line px-3 py-2 text-[11px] text-muted">Karma opportunity = expected polls per game × pace index (1.0 = league-average tempo). Faster games with more polls give more chances to extend a streak.</div>
+      <div className="border-t border-line px-3 py-2 text-[11px] text-muted">Karma opportunity = expected polls per game × pace index (1.0 = NFL-average tempo). Values marked ~ are estimates from sport averages, not measurements. Faster games with more polls give more chances to extend a streak.</div>
     </div>
   );
 }

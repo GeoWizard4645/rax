@@ -1,14 +1,19 @@
 /**
- * General upstream proxy for Real's mobile API  —  /api/proxy/real?endpoint=v1/users/<name>/profile
+ * General upstream proxy  —  /api/proxy/real?endpoint=v1/users/<name>/profile
  *
- * Browsers can't call Real's private mobile endpoints cross-origin, so requests go through here.
+ * NOTE: Real's own API (web.realapp.com) requires a logged-in session, a per-request signed token and a Turnstile
+ * token, so it cannot be reached by an anonymous proxy — see docs/DATA-SOURCES.md. This proxy is only useful for an
+ * upstream you are *authorised* to call (e.g. a partner API from Real, or a Rateboard-style service). It sends an
+ * honest User-Agent and never forges app tokens.
+ *
+ * Browsers can't call such endpoints cross-origin, so requests go through here.
  * The upstream base URL is NOT hard-coded: set REAL_API_BASE (Pages env var). Until it's set this
  * returns 503 `upstream_not_configured` and the UI falls back to labelled sample data.
  *
  * Safety: only `GET`, only paths under `v1/`, no traversal, https upstream only.
  * Caching: Cloudflare's Cache API (free, no write quota) — 60 s for live games, 300 s otherwise.
  */
-import { cached, DEFAULT_REAL_UA, err, json, preflight, type Env } from '../../_lib/http';
+import { cached, err, json, OUR_UA, preflight, type Env } from '../../_lib/http';
 
 const ENDPOINT_RE = /^v1\/[A-Za-z0-9_\-./]{1,200}$/;
 
@@ -43,7 +48,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
       ttl,
       async () => {
         const res = await fetch(target, {
-          headers: { 'User-Agent': env.REAL_USER_AGENT || DEFAULT_REAL_UA, Accept: 'application/json' },
+          headers: { 'User-Agent': env.REAL_USER_AGENT || OUR_UA, Accept: 'application/json' },
         });
         if (!res.ok) return err(res.status === 404 ? 404 : 502, 'upstream_error', `Upstream answered ${res.status}.`, { upstreamStatus: res.status });
         let data: unknown;

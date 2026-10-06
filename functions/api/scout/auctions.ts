@@ -12,7 +12,7 @@ import type { AuctionBid, AuctionsResponse, ContenderActivity } from '../../../s
 import type { Rarity, Sport } from '../../../src/types/real';
 import { median, perRatingPrice, playerKey, RARITIES, SPORTS } from '../../../shared/formulas';
 import { sampleAuctions } from '../../../shared/sample';
-import { cached, DEFAULT_REAL_UA, err, json, preflight, type Env } from '../../_lib/http';
+import { cached, err, json, OUR_UA, preflight, type Env } from '../../_lib/http';
 import { loadHistory, recordSnapshot } from '../../_lib/history';
 
 const DAY = 86_400_000;
@@ -93,7 +93,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
     if (env.REAL_API_BASE && env.AUCTIONS_ENDPOINT) {
       try {
         const res = await fetch(`${env.REAL_API_BASE.replace(/\/+$/, '')}/${env.AUCTIONS_ENDPOINT.replace(/^\/+/, '')}`, {
-          headers: { 'User-Agent': env.REAL_USER_AGENT || DEFAULT_REAL_UA, Accept: 'application/json' },
+          headers: { 'User-Agent': env.REAL_USER_AGENT || OUR_UA, Accept: 'application/json' },
         });
         if (res.ok) {
           const body: any = await res.json();

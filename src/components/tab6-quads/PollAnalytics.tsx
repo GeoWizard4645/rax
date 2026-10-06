@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CONSENSUS_PCT, CONTRARIAN_MAX_PCT, CONTRARIAN_MIN_PCT, readPoll } from '../../../shared/quads';
 import type { Poll, QuadGame } from '../../../shared/sample';
+import { DataBadge } from '../ui/DataBadge';
 import { Empty } from '../ui/StateBlock';
 
 const KIND = { consensus: { label: 'Heavy consensus', cls: 'chip-emerald' }, lean: { label: 'Leaning', cls: 'chip-blue' }, split: { label: 'Split', cls: 'chip-muted' } } as const;
@@ -15,7 +16,7 @@ export default function PollAnalytics({ polls, games, gameId }: { polls: Poll[];
     <div className="panel overflow-hidden">
       <div className="panel-hd flex-wrap">
         <h2>Poll trend intelligence{game ? ` — ${game.away} @ ${game.home}` : ''}</h2>
-        <label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={contrarianOnly} onChange={(e) => setContrarianOnly(e.target.checked)} /> contrarian value only</label>
+        <span className="flex items-center gap-3"><DataBadge source="sample" note="Poll percentages are synthetic — Real's community poll data isn't available without its private API." /><label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={contrarianOnly} onChange={(e) => setContrarianOnly(e.target.checked)} /> contrarian value only</label></span>
       </div>
       {reads.length === 0 ? <Empty title="No polls match">Pick a game above, or clear the filter.</Empty> : (
         <ul>

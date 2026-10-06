@@ -25,14 +25,14 @@ describe('/api/proxy/real', () => {
     expect(r.status).toBe(503);
     expect((await J(r)).error).toBe('upstream_not_configured');
   });
-  it('sends the mobile-client headers and CORS', async () => {
+  it('sends an honest User-Agent, JSON accept and CORS', async () => {
     const s = stub(() => new Response('{"ok":1}', { headers: { 'content-type': 'application/json' } }));
     const r = await run(real, '/api/proxy/real?endpoint=v1/users/x/profile&a=1', { REAL_API_BASE: 'https://api.example.test/' });
     expect(await J(r)).toEqual({ ok: 1 });
     expect(r.headers.get('access-control-allow-origin')).toBe('*');
     const [url, init] = s.mock.calls[0];
     expect(url).toBe('https://api.example.test/v1/users/x/profile?a=1');
-    expect((init as any).headers['User-Agent']).toBe('RealApp/1.0 (iOS; Build 2026.1)');
+    expect((init as any).headers['User-Agent']).toMatch(/^rax-super-suite/);
     expect((init as any).headers.Accept).toBe('application/json');
   });
   it('rejects http bases, non-GET and traversal', async () => {

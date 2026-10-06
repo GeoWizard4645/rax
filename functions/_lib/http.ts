@@ -3,7 +3,7 @@ export interface Env {
   CACHE?: KVNamespace;
   /** Base URL of Real's API, e.g. https://api.example.com — required by /api/proxy/real. */
   REAL_API_BASE?: string;
-  /** Overrides the mobile-client User-Agent sent upstream. */
+  /** Overrides the User-Agent sent to the upstream. Defaults to an honest identifying UA. */
   REAL_USER_AGENT?: string;
   /** Path (relative to REAL_API_BASE) of the auctions feed; enables live data in /api/scout/auctions. */
   AUCTIONS_ENDPOINT?: string;
@@ -11,7 +11,6 @@ export interface Env {
   CDN_ALLOWED_HOSTS?: string;
 }
 
-export const DEFAULT_REAL_UA = 'RealApp/1.0 (iOS; Build 2026.1)';
 /** Identifies this app honestly on requests to community sites. */
 export const OUR_UA = 'rax-super-suite/0.1 (+https://rax.vivaanshahani.com)';
 

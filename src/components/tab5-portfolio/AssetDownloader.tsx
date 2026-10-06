@@ -6,10 +6,10 @@ import { Segmented } from '../ui/Segmented';
 
 type Cat = 'cutouts' | 'frames' | 'badges' | 'avatars';
 const CATS: Array<{ value: Cat; label: string; hint: string; example: string }> = [
-  { value: 'cutouts', label: 'Player cutouts', hint: 'Raw transparent .png cutouts', example: 'https://<cdn-host>/players/{id}.png' },
-  { value: 'frames', label: 'Backgrounds & frames', hint: 'Card backgrounds and frame borders', example: 'https://<cdn-host>/cards/frames/{id}.png' },
-  { value: 'badges', label: 'League & team badges', hint: 'League and team logos', example: 'https://<cdn-host>/teams/{id}.png' },
-  { value: 'avatars', label: 'Avatars & icons', hint: 'Profile avatars and custom icons', example: 'https://<cdn-host>/avatars/{id}.png' },
+  { value: 'cutouts', label: 'Player cutouts', hint: 'Raw transparent .png cutouts', example: 'https://media.realapp.com/<path-to-cutout>/{id}.png' },
+  { value: 'frames', label: 'Backgrounds & frames', hint: 'Card backgrounds and frame borders', example: 'https://media.realapp.com/<path-to-frame>/{id}.png' },
+  { value: 'badges', label: 'League & team badges', hint: 'League and team logos', example: 'https://media.realapp.com/<path-to-badge>/{id}.png' },
+  { value: 'avatars', label: 'Avatars & icons', hint: 'Profile avatars and custom icons', example: 'https://media.realapp.com/<path-to-avatar>/{id}.png' },
 ];
 const KEY = 'rax_cdn_templates_v1';
 
@@ -52,6 +52,17 @@ export default function AssetDownloader() {
           <div className="space-y-3">
             <p className="hint">{meta.hint}</p>
             <div>
+              <label className="label" htmlFor="direct"><Link2 size={11} className="mr-1 inline" />Paste a direct image URL</label>
+              <input id="direct" className="field num" value={direct} onChange={(e) => { setDirect(e.target.value); setBroken(false); }} placeholder="https://media.realapp.com/…" autoComplete="off" />
+              <p className="hint mt-1">
+                In the Real web app, right-click a card or avatar → <i>Copy image address</i>, then paste it here. Images come from <span className="num">media.realapp.com</span>, a public CDN.{' '}
+                <button type="button" className="underline" onClick={() => { setDirect('https://media.realapp.com/assets/favicons/favicon-192.png'); setBroken(false); }}>Try a known public asset</button>
+              </p>
+            </div>
+            <details className="rounded-md border border-line px-3 py-2">
+              <summary className="cursor-pointer text-xs text-muted">Or build URLs from a template + id</summary>
+              <div className="mt-3 space-y-3">
+            <div>
               <label className="label" htmlFor="tpl">URL template for this type</label>
               <input id="tpl" className="field num" value={template} placeholder={meta.example} onChange={(e) => { const t = { ...templates, [cat]: e.target.value }; setTemplates(t); save(KEY, t); }} />
               <p className="hint mt-1">Use <span className="num">{'{id}'}</span> where the asset id goes. The CDN's real paths aren't known to this tool, so paste the pattern once — it's remembered in this browser.</p>
@@ -60,10 +71,8 @@ export default function AssetDownloader() {
               <label className="label" htmlFor="aid">Asset id</label>
               <input id="aid" className="field num" value={id} onChange={(e) => { setId(e.target.value); setBroken(false); }} placeholder="e.g. 12345" autoComplete="off" />
             </div>
-            <div>
-              <label className="label" htmlFor="direct"><Link2 size={11} className="mr-1 inline" />…or paste a direct image URL</label>
-              <input id="direct" className="field num" value={direct} onChange={(e) => { setDirect(e.target.value); setBroken(false); }} placeholder="https://…" autoComplete="off" />
-            </div>
+              </div>
+            </details>
             <div className="num break-all rounded-md border border-line bg-base px-2.5 py-1.5 text-xs text-muted">{resolved || 'Resolved URL appears here'}</div>
             <a className={`btn-primary w-full !no-underline ${proxied ? '' : 'pointer-events-none opacity-40'}`} href={proxied ? `${proxied}&download=1&filename=${encodeURIComponent(filename)}` : undefined} download={filename} aria-disabled={!proxied}>
               <Download size={14} /> Download High-Res Asset

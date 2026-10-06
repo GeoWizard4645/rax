@@ -9,6 +9,9 @@ id = "e17e5f0373004179bef1230c5606bfe7"
 
 [vars]
 # Optional upstream configuration — see README "Configuration".
-# REAL_API_BASE = "https://<real-app-api-host>"
-# REAL_USER_AGENT = "RealApp/1.0 (iOS; Build 2026.1)"
-# CDN_ALLOWED_HOSTS = "cdn.example.com,images.example.com"
+# Real's public image CDN — enables the Tab 5 asset downloader.
+CDN_ALLOWED_HOSTS = "media.realapp.com"
+# Real's API itself (web.realapp.com) needs a login + signed per-request tokens, so it can't be called anonymously.
+# Only set these for an upstream you are authorised to call — see docs/DATA-SOURCES.md.
+# REAL_API_BASE = "https://<authorised-upstream>"
+# AUCTIONS_ENDPOINT = "v1/auctions"

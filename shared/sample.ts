@@ -315,6 +315,9 @@ export interface QuadGame {
   /** Expected polls per game. */
   pollsPerGame: number;
   marquee: boolean;
+  status?: 'scheduled' | 'live' | 'final';
+  /** True when pace / polls-per-game come from sport averages rather than game-specific data. */
+  estimated?: boolean;
 }
 
 export interface PollOption {
@@ -354,6 +357,11 @@ export function sampleQuads(now: number): { games: QuadGame[]; polls: Poll[] } {
     marquee: s.marquee,
   }));
 
+  return { games, polls: samplePolls(games, now) };
+}
+
+/** Synthetic community polls for any list of games (used with real schedules too — always SAMPLE). */
+export function samplePolls(games: QuadGame[], now: number): Poll[] {
   const polls: Poll[] = [];
   const QUESTIONS = ['Will the favorite cover the spread?', 'Does the first scoring play come in the first quarter?', 'Will the game go to overtime?', 'Which team scores last?', 'Will there be a lead change in the 2nd half?', 'Does the top scorer exceed their season average?'];
   games.forEach((g) => {
@@ -371,5 +379,6 @@ export function sampleQuads(now: number): { games: QuadGame[]; polls: Poll[] } {
       polls.push({ id: `${g.id}-p${i}`, gameId: g.id, question: QUESTIONS[(i + Math.floor(r() * 3)) % QUESTIONS.length], options, votes: Math.round(800 + r() * 14000) });
     }
   });
-  return { games, polls };
+  return polls;
 }
+
