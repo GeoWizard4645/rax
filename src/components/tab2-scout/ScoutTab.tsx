@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { useAuctions } from '../../hooks/useAuctions';
+import { clearSnapshot, loadSnapshot, snapshotToResponse, type Snapshot } from '../../lib/snapshots';
+import ImportPanel from './ImportPanel';
 import { useCollections } from '../../hooks/useRealUser';
 import { RB_PULLABLE, type RbSport } from '../../../shared/rateboard';
 import { DataBadge, SampleNotice } from '../ui/DataBadge';
@@ -18,7 +20,11 @@ type View = 'radar' | 'scout' | 'contenders';
 const PULL: RbSport[] = RB_PULLABLE.filter((s) => s !== 'FC'); // sports shared with the auction feed: NFL, CFB, UFC
 
 export default function ScoutTab() {
-  const { data, error, loading, reload } = useAuctions();
+  const api = useAuctions();
+  const [snap, setSnap] = useState<Snapshot | null>(loadSnapshot);
+  const imported = useMemo(() => (snap ? snapshotToResponse(snap) : null), [snap]);
+  const data = imported ?? api.data;
+  const { error, loading, reload } = imported ? { error: null, loading: false, reload: () => {} } : api;
   const col = useCollections();
   const [input, setInput] = useState('');
   const [view, setView] = useState<View>('radar');
@@ -55,6 +61,12 @@ export default function ScoutTab() {
         <DataBadge source={data?.source} note={data?.note} />
       </div>
       <SampleNotice source={data?.source} note={data?.note} />
+      {imported && snap && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-action/30 bg-action/5 px-3 py-2 text-xs text-head">
+          <span>Showing <b>your imported snapshot</b> of {snap.bids.length} auctions from {new Date(snap.t).toLocaleString()}. Premiums use {Object.values(imported.baselineKinds).includes('history') ? 'your earlier imports where available, otherwise' : ''} similar cards in the same snapshot.</span>
+          <button className="btn-ghost btn-sm" onClick={() => { clearSnapshot(); setSnap(null); }}>Back to {api.data?.source === 'live' ? 'live' : 'sample'} data</button>
+        </div>
+      )}
 
       <Explain title="How this works — and what to expect">
         <p>
@@ -106,6 +118,8 @@ export default function ScoutTab() {
           </span>
         ))}
       </form>
+
+      <ImportPanel onImported={setSnap} />
 
       {loading && !data && <Loading label="Reading auctions…" />}
       {error && <ErrorBlock message={error} onRetry={reload} />}

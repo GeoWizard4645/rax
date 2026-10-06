@@ -5,7 +5,7 @@ An unofficial analytics and scouting terminal for Real App cards, built for **Cl
 | Tab | What it is | Data |
 |---|---|---|
 | 1 · Rateboard | A window onto [Rateboard](https://rateboard-cgi.pages.dev): board, buyer/seller flows, copy-messages, profile inspector | **Live** — every action is a real request to Rateboard |
-| 2 · Scout | Overpriced-auction radar, proactive scout (DM pitch generator), repeat contenders | Live feed if configured, else **sample** |
+| 2 · Scout | Overpriced-auction radar, proactive scout (DM pitch generator), repeat contenders | Live feed if configured, else **sample** — or **import your own snapshot** ([guide](docs/CAPTURE-GUIDE.md)) |
 | 3 · Volatility | Spike screener, fair-value scatter, candles, **Monte Carlo projections** | Live history if configured, else **sample** |
 | 4 · OTD Rax | 2-claim optimizer, ROI / break-even, comparison, catalog, dataset import | **Sample** until you import games |
 | 5 · Portfolio | Earnings audit, CDN asset downloader | Public CDN (`media.realapp.com`) + inputs you provide |

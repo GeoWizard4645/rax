@@ -3,7 +3,7 @@
 import type { Rarity, Sport } from './real';
 
 /** Where a dataset came from — drives the LIVE / SAMPLE badge shown in the UI. */
-export type DataSource = 'live' | 'sample';
+export type DataSource = 'live' | 'sample' | 'imported';
 
 export interface AuctionBid {
   auctionId: string;

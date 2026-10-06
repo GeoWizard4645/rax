@@ -62,5 +62,5 @@ ESPN's scoreboard JSON is unofficial and unguaranteed, but unauthenticated and f
 
 1. **Ask Rateboard's owner.** They already hold a working Real connection and a per-game rax dataset (`/api/rax`). Ask for (a) read access or a key for the game-data endpoint, (b) a read-only marketplace/auction snapshot endpoint if they have one. Free, fast, and the data is built to be shared — this is the best next step.
 2. **Ask Real** for API access or a partnership/data agreement. Slow but the only fully legitimate route to marketplace data.
-3. **Import what you can export.** Tab 4 already accepts CSV/JSON of historical games; the same pattern could be added for auction snapshots you collect by hand. Free, manual.
+3. **Import what you can copy from your own session.** Tab 2 imports auction JSON (schema-agnostic field mapping, local only) and Tab 4 imports historical games. See [CAPTURE-GUIDE.md](CAPTURE-GUIDE.md). Free, manual, and legitimate.
 4. **Not recommended:** automating a logged-in account or forging Real's request tokens — against the terms, fragile, and a ban risk.
