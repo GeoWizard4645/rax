@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { liveOffers, RB_SPORTS, type RbBoard, type RbSport } from '../../../shared/rateboard';
 import { Empty } from '../ui/StateBlock';
+import { useUfc } from '../../hooks/useUfc';
+import { findFighter } from '../../../shared/ufc';
+import UfcChip from '../ui/UfcChip';
 import TradeLink from './TradeLink';
 import { RB_ORIGIN } from '../../../shared/rateboard';
 
@@ -10,6 +13,7 @@ const PAGE = 120;
 export default function BoardList({ board, sport, meKey, onEdit, onRemove }: { board: RbBoard; sport: RbSport; meKey: string | null; onEdit: (id: string) => void; onRemove: (id: string) => void }) {
   const [filter, setFilter] = useState('');
   const [shown, setShown] = useState(PAGE);
+  const ufc = useUfc(sport === 'UFC');
   const live = useMemo(() => liveOffers(board, sport), [board, sport]);
   const f = filter.trim().toLowerCase();
   const rows = useMemo(() => (f ? live.filter((o) => o.player.toLowerCase().includes(f) || (board.users[o.user]?.name || o.user).toLowerCase().includes(f)) : live), [live, f, board.users]);
@@ -40,7 +44,10 @@ export default function BoardList({ board, sport, meKey, onEdit, onRemove }: { b
                   <small className="text-xs text-muted">/1</small>
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{o.player}</span>
+                  <span className="block truncate text-sm font-medium">
+                    {o.player}
+                    {sport === 'UFC' && (() => { const f = findFighter(ufc.index, o.player); return f ? <> <UfcChip f={f} /></> : null; })()}
+                  </span>
                   <span className="block truncate text-xs text-muted">{who}</span>
                 </span>
                 <span className="flex flex-wrap items-center justify-end gap-1.5">

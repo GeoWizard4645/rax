@@ -82,6 +82,8 @@ export interface RbKeep {
   id?: string;
   sport: RbSport;
   player: string;
+  /** Position on Rateboard's keep list (1 = most wanted by the house), when it has one. */
+  rank?: number;
 }
 export interface RbHouse {
   id?: string;
@@ -387,6 +389,25 @@ export function buildMatches(board: RbBoard, sport: RbSport, raw: Array<SellerCa
     haul,
     unpriced: rows.length - priced.length,
   };
+}
+
+export interface BestOffer {
+  rate: number;
+  /** Display name of the buyer (or the house buyer's label). */
+  buyer: string;
+  house: boolean;
+}
+
+/** Best standing price for one card: the house buyer's rate if he lists the player, else the top live offer. */
+export function bestOfferFor(board: RbBoard, sport: RbSport, player: string): BestOffer | null {
+  const hs = houseFor(board, sport, player);
+  if (hs) return { rate: hs.rate, buyer: HOUSE.buyer, house: true };
+  let best: BestOffer | null = null;
+  for (const o of board.offers) {
+    if (o.sport !== sport || board.users[o.user]?.banned || !samePlayer(o.player, player)) continue;
+    if (!best || o.rate > best.rate) best = { rate: o.rate, buyer: board.users[o.user]?.name || o.user, house: false };
+  }
+  return best;
 }
 
 export interface BigOrderCard {

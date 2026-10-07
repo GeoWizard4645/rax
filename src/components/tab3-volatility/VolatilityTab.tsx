@@ -7,6 +7,7 @@ import { ErrorBlock, Loading } from '../ui/StateBlock';
 import { SportTabs } from '../ui/SportSelect';
 import { Stat } from '../ui/Stat';
 import ForecastPanel from './ForecastPanel';
+import RateboardDemand from './RateboardDemand';
 import SpikeCards from './SpikeCards';
 import ValuationScatter from './ValuationScatter';
 import VolumeCandles from './VolumeCandles';
@@ -37,6 +38,8 @@ export default function VolatilityTab() {
       </div>
       <SampleNotice source={data?.source} note={data?.note} />
       {data?.source === 'live' && data.note && <div className="rounded-md border border-line px-3 py-2 text-xs text-muted">{data.note}</div>}
+
+      <RateboardDemand />
 
       <SportTabs sports={SPORTS} value={sport} onChange={setSport} allLabel="All sports" />
 

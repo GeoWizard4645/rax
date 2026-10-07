@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import Header from './components/layout/Header';
 import Footer from './components/layout/Footer';
 import TabNav from './components/layout/TabNav';
+import LimitationsBanner from './components/layout/LimitationsBanner';
 import { ToastProvider } from './components/ui/Toast';
 import { Loading } from './components/ui/StateBlock';
 
@@ -20,6 +21,7 @@ export default function App() {
       <div className="flex min-h-screen flex-col">
         <Header />
         <TabNav />
+        <LimitationsBanner />
         <main className="mx-auto w-full max-w-[1500px] flex-1 px-3 py-4 sm:px-4">
           <Suspense fallback={<Loading label="Loading tab…" />}>
             <Routes>

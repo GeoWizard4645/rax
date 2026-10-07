@@ -2,7 +2,11 @@ import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { RARITIES, RARITY_MULT, fmtRax } from '../../../shared/formulas';
 import { planDay, type OwnedCard } from '../../../shared/otd';
-import { RB_SPORTS, type RbSport } from '../../../shared/rateboard';
+import { bestOfferFor, owedFor, RB_SPORTS, type RbSport } from '../../../shared/rateboard';
+import { findFighter } from '../../../shared/ufc';
+import { useRbBoard } from '../../hooks/useRbBoard';
+import { useUfc } from '../../hooks/useUfc';
+import UfcChip from '../ui/UfcChip';
 import { useCollections } from '../../hooks/useRealUser';
 import { useOTDCalendar, localMonthDay } from '../../hooks/useOTDCalendar';
 import { load, save } from '../../lib/storage';
@@ -22,6 +26,8 @@ interface Row {
   rarity: Rarity;
   /** Base Rax this card earns from today's live game, per copy — as shown in the app. */
   liveBase: number;
+  /** Summed rating of the pulled copies (Rateboard's "value"), when known. */
+  value?: number;
 }
 
 const rowId = (sport: string, name: string) => `${sport}|${name.toLowerCase()}`;
@@ -34,6 +40,8 @@ const rowId = (sport: string, name: string) => `${sport}|${name.toLowerCase()}`;
 export default function EarningsAudit() {
   const col = useCollections();
   const otd = useOTDCalendar();
+  const { board } = useRbBoard();
+  const ufc = useUfc(true);
   const [input, setInput] = useState('');
   const [rows, setRows] = useState<Row[]>(() => load<Row[]>(KEY, []));
   const [defaultRarity, setDefaultRarity] = useState<Rarity>('Common');
@@ -46,7 +54,7 @@ export default function EarningsAudit() {
     for (const [sport, players] of Object.entries(col.collections) as Array<[RbSport, NonNullable<(typeof col.collections)[RbSport]>]>) {
       for (const p of players) {
         const id = rowId(sport, p.name);
-        if (!next.some((r) => r.id === id)) next.push({ id, sport, name: p.name, copies: p.total, rarity: defaultRarity, liveBase: 0 });
+        if (!next.some((r) => r.id === id)) next.push({ id, sport, name: p.name, copies: p.total, rarity: defaultRarity, liveBase: 0, value: p.totalValue });
       }
     }
     persist(next);
@@ -57,6 +65,8 @@ export default function EarningsAudit() {
   const plan = useMemo(() => planDay(owned, otd.games, md, otd.sportMult), [owned, otd.games, otd.sportMult, md]);
   const live = rows.reduce((n, r) => n + r.liveBase * RARITY_MULT[r.rarity] * r.copies, 0);
   const total = live + plan.claimableTotal;
+  const offers = useMemo(() => new Map(rows.map((r) => [r.id, board ? bestOfferFor(board, r.sport, r.name) : null])), [rows, board]);
+  const rbHaul = rows.reduce((n, r) => { const o = offers.get(r.id); return o && r.value ? n + owedFor(r.value, o.rate) : n; }, 0);
   const pulled = Object.values(col.collections).some((l) => l && l.length);
 
   return (
@@ -81,11 +91,12 @@ export default function EarningsAudit() {
         {Object.entries(col.errors).map(([s, m]) => <span key={s} className="w-full text-xs text-danger">{s}: {m}</span>)}
       </form>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <Stat label="Total today" value={fmtRax(total)} sub="Rax" tone="emerald" />
         <Stat label="Live games" value={fmtRax(live)} sub={`${rows.filter((r) => r.liveBase > 0).length} cards playing`} tone="blue" />
         <Stat label="OTD claims" value={fmtRax(plan.claimableTotal)} sub={owned.length ? `top 2/sport · ${md}` : 'add cards in Tab 4'} tone="amber" />
         <Stat label="OTD left on table" value={fmtRax(plan.leftOnTable)} sub="outside the top 2" />
+        <Stat label="Rateboard haul" value={fmtRax(rbHaul)} sub={board ? 'sell every priced card at its best live offer' : 'board unavailable'} tone="blue" />
       </div>
       {total > 0 && (
         <div className="panel p-3" aria-label="Live vs OTD split">
@@ -99,7 +110,7 @@ export default function EarningsAudit() {
         {rows.length === 0 ? <Empty title="No holdings yet">Pull a username above, then add the pulled players here.</Empty> : (
           <div className="max-h-[520px] overflow-auto">
             <table className="tbl">
-              <thead className="sticky top-0 bg-surface"><tr><th>Player</th><th className="r">Copies</th><th>Rarity tier</th><th className="r">Live base Rax / copy</th><th className="r">Tier ×</th><th className="r">Earns today</th></tr></thead>
+              <thead className="sticky top-0 bg-surface"><tr><th>Player</th><th className="r">Copies</th><th>Rarity tier</th><th className="r">Live base Rax / copy</th><th className="r">Tier ×</th><th className="r">Earns today</th><th className="r">Rateboard</th></tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
@@ -109,6 +120,18 @@ export default function EarningsAudit() {
                     <td className="r"><input className="field num !w-24 !py-0.5 text-right" inputMode="decimal" value={r.liveBase || ''} placeholder="0" onChange={(e) => patch(r.id, { liveBase: Math.max(0, +e.target.value || 0) })} aria-label={`Live base Rax for ${r.name}`} /></td>
                     <td className="r num text-muted">{RARITY_MULT[r.rarity].toFixed(1)}×</td>
                     <td className="r num font-semibold text-emerald">{fmtRax(r.liveBase * RARITY_MULT[r.rarity] * r.copies)}</td>
+                    <td className="r num text-xs">
+                      {(() => {
+                        const o = offers.get(r.id);
+                        const f = r.sport === 'UFC' ? findFighter(ufc.index, r.name) : null;
+                        return (
+                          <>
+                            {o ? <span title={`${o.house ? 'House buyer' : o.buyer} is paying ${o.rate}/1`}>{o.rate}/1{r.value ? <span className="text-muted"> · {owedFor(r.value, o.rate).toLocaleString('en-US')}</span> : null}</span> : <span className="text-muted">no offer</span>}
+                            {f && <> <UfcChip f={f} /></>}
+                          </>
+                        );
+                      })()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
