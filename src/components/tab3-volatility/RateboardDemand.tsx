@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useRbBoard } from '../../hooks/useRbBoard';
 import { useUfc } from '../../hooks/useUfc';
+import { usePlayerStats } from '../../hooks/useRax';
+import { RB_TO_RAX } from '../../../shared/rax';
 import { buildDemand } from '../../../shared/demand';
-import { RB_ORIGIN, RB_SPORTS, type RbSport } from '../../../shared/rateboard';
+import { norm, RB_ORIGIN, RB_SPORTS, type RbSport } from '../../../shared/rateboard';
 import { findFighter } from '../../../shared/ufc';
 import UfcChip from '../ui/UfcChip';
 import { DataBadge } from '../ui/DataBadge';
@@ -21,6 +23,7 @@ export default function RateboardDemand() {
   const [sport, setSport] = useState<Pick>('ALL');
   const wantUfc = sport === 'ALL' || sport === 'UFC';
   const ufc = useUfc(wantUfc);
+  const stats = usePlayerStats((Object.keys(RB_TO_RAX) as RbSport[]).filter((s) => sport === 'ALL' || s === sport));
 
   const d = useMemo(() => (board ? buildDemand(board, sport, fetchedAt ?? Date.now()) : null), [board, sport, fetchedAt]);
   const peak = d ? Math.max(1, ...d.days.map((x) => x.offers)) : 1;
@@ -74,6 +77,8 @@ export default function RateboardDemand() {
                       <th className="r">Buyers</th>
                       <th className="r">Best</th>
                       <th className="r">Median</th>
+                      <th className="r">Owners</th>
+                      <th className="r">Season Rax</th>
                       <th className="r">Floor</th>
                       <th className="r">New 7d</th>
                       <th>Flags</th>
@@ -90,6 +95,15 @@ export default function RateboardDemand() {
                           <td className="num r">{r.buyers}</td>
                           <td className="num r">{r.best}/1</td>
                           <td className="num r">{r.median}/1</td>
+                          {(() => {
+                            const st = stats.get(r.sport)?.get(norm(r.player));
+                            return (
+                              <>
+                                <td className="num r">{st?.owners != null ? st.owners.toLocaleString() : '—'}</td>
+                                <td className="num r">{st?.rax != null ? st.rax.toLocaleString() : '—'}</td>
+                              </>
+                            );
+                          })()}
                           <td className="num r">{r.floor ? `${r.floor}/1` : '—'}</td>
                           <td className="num r">{r.new7d}</td>
                           <td className="space-x-1">
@@ -106,7 +120,7 @@ export default function RateboardDemand() {
             )}
             {d.rows.length > SHOWN && <div className="text-[11px] text-muted">Showing the {SHOWN} most active of {d.rows.length.toLocaleString()} players.</div>}
             {ufc.error && wantUfc && <div className="text-[11px] text-muted">UFC status unavailable right now ({ufc.error}).</div>}
-            <div className="text-[11px] text-muted">Data from Rateboard (rateboard-cgi.pages.dev) — refreshes every minute. UFC status comes from Rateboard's UFC.com feed.</div>
+            <div className="text-[11px] text-muted">Data from Rateboard (rateboard-cgi.pages.dev) — refreshes every minute. UFC status comes from Rateboard's UFC.com feed; owners and season Rax from its Rax logs (NFL, CFB, NHL, FC).</div>
           </>
         )}
       </div>

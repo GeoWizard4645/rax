@@ -3,6 +3,9 @@ import { Search } from 'lucide-react';
 import { liveOffers, RB_SPORTS, type RbBoard, type RbSport } from '../../../shared/rateboard';
 import { Empty } from '../ui/StateBlock';
 import { useUfc } from '../../hooks/useUfc';
+import { usePlayerStats } from '../../hooks/useRax';
+import { norm } from '../../../shared/rateboard';
+import StatChips from '../ui/StatChips';
 import { findFighter } from '../../../shared/ufc';
 import UfcChip from '../ui/UfcChip';
 import TradeLink from './TradeLink';
@@ -14,6 +17,7 @@ export default function BoardList({ board, sport, meKey, onEdit, onRemove }: { b
   const [filter, setFilter] = useState('');
   const [shown, setShown] = useState(PAGE);
   const ufc = useUfc(sport === 'UFC');
+  const stats = usePlayerStats([sport]).get(sport);
   const live = useMemo(() => liveOffers(board, sport), [board, sport]);
   const f = filter.trim().toLowerCase();
   const rows = useMemo(() => (f ? live.filter((o) => o.player.toLowerCase().includes(f) || (board.users[o.user]?.name || o.user).toLowerCase().includes(f)) : live), [live, f, board.users]);
@@ -46,6 +50,7 @@ export default function BoardList({ board, sport, meKey, onEdit, onRemove }: { b
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">
                     {o.player}
+                    {stats && <StatChips stat={stats.get(norm(o.player))} />}
                     {sport === 'UFC' && (() => { const f = findFighter(ufc.index, o.player); return f ? <> <UfcChip f={f} /></> : null; })()}
                   </span>
                   <span className="block truncate text-xs text-muted">{who}</span>

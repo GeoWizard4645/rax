@@ -6,6 +6,7 @@ import { bestOfferFor, owedFor, RB_SPORTS, type RbSport } from '../../../shared/
 import { findFighter } from '../../../shared/ufc';
 import { useRbBoard } from '../../hooks/useRbBoard';
 import { useUfc } from '../../hooks/useUfc';
+import { useCardGames } from '../../hooks/useRax';
 import UfcChip from '../ui/UfcChip';
 import { useCollections } from '../../hooks/useRealUser';
 import { useOTDCalendar, localMonthDay } from '../../hooks/useOTDCalendar';
@@ -62,7 +63,13 @@ export default function EarningsAudit() {
   const patch = (id: string, p: Partial<Row>) => persist(rows.map((r) => (r.id === id ? { ...r, ...p } : r)));
 
   const owned = useMemo(() => load<OwnedCard[]>('rax_otd_owned_v1', []), []);
-  const plan = useMemo(() => planDay(owned, otd.games, md, otd.sportMult), [owned, otd.games, otd.sportMult, md]);
+  const ownedGames = useCardGames(owned, otd.source === 'live');
+  const allGames = useMemo(() => {
+    if (!ownedGames.data?.length) return otd.games;
+    const seen = new Set(otd.games.map((g) => g.id));
+    return [...otd.games, ...ownedGames.data.filter((g) => !seen.has(g.id))];
+  }, [otd.games, ownedGames.data]);
+  const plan = useMemo(() => planDay(owned, allGames, md, otd.sportMult), [owned, allGames, otd.sportMult, md]);
   const live = rows.reduce((n, r) => n + r.liveBase * RARITY_MULT[r.rarity] * r.copies, 0);
   const total = live + plan.claimableTotal;
   const offers = useMemo(() => new Map(rows.map((r) => [r.id, board ? bestOfferFor(board, r.sport, r.name) : null])), [rows, board]);

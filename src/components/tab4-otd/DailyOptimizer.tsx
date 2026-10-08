@@ -8,6 +8,7 @@ import { dec, rax } from '../../lib/format';
 import { Empty } from '../ui/StateBlock';
 import { Stat } from '../ui/Stat';
 import { useToast } from '../ui/Toast';
+import { useCardGames, useRaxNameSearch, useRaxSeasons } from '../../hooks/useRax';
 
 const KEY = 'rax_otd_owned_v1';
 
@@ -25,7 +26,7 @@ function parseOwned(text: string): { cards: OwnedCard[]; errors: string[] } {
 }
 
 /** 2-Claim Daily Optimizer: today's payout per owned past-season card; the top 2 per sport are flagged. */
-export default function DailyOptimizer({ games, md, sportMult }: { games: HistoricalGame[]; md: string; sportMult: SportMult }) {
+export default function DailyOptimizer({ games: dayGames, md, sportMult, live = false }: { games: HistoricalGame[]; md: string; sportMult: SportMult; live?: boolean }) {
   const notify = useToast();
   const [owned, setOwned] = useState<OwnedCard[]>(() => load<OwnedCard[]>(KEY, []));
   const [paste, setPaste] = useState('');
@@ -35,8 +36,20 @@ export default function DailyOptimizer({ games, md, sportMult }: { games: Histor
   const [rarity, setRarity] = useState<Rarity>('Common');
 
   const persist = (c: OwnedCard[]) => (setOwned(c), save(KEY, c));
-  const players = useMemo(() => [...new Set(games.filter((g) => g.sport === sport).map((g) => g.playerName))].sort(), [games, sport]);
-  const seasons = useMemo(() => [...new Set(games.filter((g) => g.sport === sport && g.playerName.toLowerCase() === player.trim().toLowerCase()).map((g) => g.season))].sort().reverse(), [games, sport, player]);
+  // Live: today's top games may not include every owned card, so each owned card's own calendar is loaded too.
+  const ownedGames = useCardGames(owned, live);
+  const games = useMemo(() => {
+    if (!live || !ownedGames.data?.length) return dayGames;
+    const seen = new Set(dayGames.map((g) => g.id));
+    return [...dayGames, ...ownedGames.data.filter((g) => !seen.has(g.id))];
+  }, [live, dayGames, ownedGames.data]);
+  const raxSeasons = useRaxSeasons(live);
+  const suggested = useRaxNameSearch(sport, player, live);
+  const players = useMemo(() => (live ? suggested : [...new Set(games.filter((g) => g.sport === sport).map((g) => g.playerName))].sort()), [live, suggested, games, sport]);
+  const seasons = useMemo(
+    () => (live ? raxSeasons.bySport[sport] ?? [] : [...new Set(games.filter((g) => g.sport === sport && g.playerName.toLowerCase() === player.trim().toLowerCase()).map((g) => g.season))].sort().reverse()),
+    [live, raxSeasons.bySport, games, sport, player],
+  );
   const plan = useMemo(() => planDay(owned, games, md, sportMult), [owned, games, md, sportMult]);
   const sportsWithRows = SPORTS.filter((s) => plan.bySport[s]?.length);
   const dup = (c: OwnedCard) => owned.some((o) => o.sport === c.sport && o.season === c.season && o.playerName.toLowerCase() === c.playerName.toLowerCase());

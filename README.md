@@ -71,7 +71,9 @@ Rateboard's JSON API sends no CORS headers, so the browser can't call it directl
 Deliberately **not** proxied:
 - whole-board overwrite (`POST /api/kv {key, value}`) — a data-loss footgun
 - admin operations (delete others' offers, reset passwords, data reports)
-- `/api/scan` (Rateboard's paid screenshot reader — "Read screenshots on Rateboard ↗" links out) and `/api/rax` (their access-gated game data)
+- `/api/scan` (Rateboard's paid screenshot reader — "Read screenshots on Rateboard ↗" links out; nothing here needs it)
+
+`/api/rax` (per-game / per-season Rax logs) **is** proxied, with Rateboard's owner's permission, for the query shapes this app uses only (`shared/rax.ts` allow-list; responses cached 10 min). It powers Tab 4 and the owners / Rax chips.
 
 Stripped before anything reaches the browser: every account's password hash, the private reports list, and the game-data grant list. Passwords are hashed **in the browser**; sign-in sends only the hash, compared server-side, never stored or logged.
 
@@ -86,7 +88,7 @@ Seeded stochastic simulation — **no machine learning**. See `shared/montecarlo
 ## Known limits (please read)
 
 - **Real's own API can't be used anonymously.** It requires a login session, a signed per-request token and a Turnstile token (see [docs/DATA-SOURCES.md](docs/DATA-SOURCES.md) for the full findings and ways forward). The spec's spoofed-User-Agent approach would not work, and forging those tokens would be circumventing access controls, so it isn't done.
-- **No live feed ⇒ sample data** for Tabs 2–4 and the poll percentages in 6 (clearly badged). Tab 4's real OTD database isn't bundled — import a CSV/JSON.
+- **No live feed ⇒ sample data** for Tab 2's auction feed, Tab 3's price history / spikes / forecast, and the poll percentages in Tab 6 (clearly badged). Tab 4 is live from Rateboard's Rax logs for NFL, NBA, MLB, NHL, college football / basketball and golf (not soccer, WNBA or UFC), falling back to sample data only if that feed fails; "Who to buy" ranks the top anniversaries of the selected date, not every card.
 - Rateboard ignores the `?card=…&action=trade` parameters (it just opens the site), per its current source.
 - Rateboard's server does not authenticate writes (it trusts the `user` field) and publishes password hashes on a public endpoint. This wrapper doesn't rely on or exploit either; it's worth telling its owner.
 - Get Rateboard's blessing: this wrapper sends your users' traffic to their backend.

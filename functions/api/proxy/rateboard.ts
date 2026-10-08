@@ -6,10 +6,13 @@
  * server-side and relays the answer. Rateboard owns the data, the accounts and the rules —
  * nothing is stored here.
  *
+ * `api/rax` (per-game / per-season Rax data) is proxied with the owner's permission, but only for the query shapes
+ * this app uses — `buildRaxQuery` rebuilds the query from an allow-list, so nothing else is forwarded.
+ *
  * What is deliberately NOT proxied (see README "Rateboard wrapper"):
  *   - whole-board overwrites (`POST /api/kv {key,value}`) — a data-loss footgun
  *   - admin operations (removing other people's offers, resetting passwords, data reports)
- *   - /api/scan (their paid screenshot reader), /api/rax (their access-gated game data)
+ *   - /api/scan (their paid screenshot reader — no feature here needs it)
  * and what is stripped from the board before it reaches the browser: every account's
  * password hash, the private `reports` list and the `gamedata` grant list.
  */
@@ -22,6 +25,7 @@ import {
   validCommentLink,
   type RbSport,
 } from '../../../shared/rateboard';
+import { buildRaxQuery } from '../../../shared/rax';
 
 const UPSTREAM_HOST = 'rateboard-cgi.pages.dev';
 const BOARD_CACHE_KEY = 'rateboard/board';
@@ -155,6 +159,14 @@ async function handleGet(path: string, params: URLSearchParams, waitUntil?: (p: 
       const qs = `?username=${encodeURIComponent(username)}&sport=${encodeURIComponent(sport)}&start=${start}` + (hashId ? `&hashId=${encodeURIComponent(hashId)}` : '');
       // Rateboard already caches collections for 2h and tells us (x-cache) — the UI relies on that header.
       return relay(await upstream('api/collection', {}, qs));
+    }
+
+    case 'api/rax': {
+      const qs = buildRaxQuery(params);
+      if (!qs) return err(400, 'bad_rax_query', 'That Rax query is not available through this app.');
+      // Season index barely changes; game / player queries are cached 10 min so repeat views don't re-hit Rateboard.
+      const ttl = qs.startsWith('gamelog=seasons') ? 3600 : 600;
+      return cached(`rateboard/rax/${qs}`, ttl, async () => relay(await upstream('api/rax', {}, `?${qs}`)), waitUntil);
     }
 
     case 'api/ufc':

@@ -52,8 +52,27 @@ describe('GET /api/proxy/rateboard', () => {
 
   it('refuses gated / paid endpoints', async () => {
     const spy = stubFetch(() => kvOk());
-    for (const p of ['api/rax', 'api/scan', 'api/admin', '../etc/passwd', 'api/kv/../scan']) {
+    for (const p of ['api/scan', 'api/admin', '../etc/passwd', 'api/kv/../scan']) {
       expect((await call(`/api/proxy/rateboard?path=${encodeURIComponent(p)}`)).status).toBe(403);
+    }
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('proxies allow-listed api/rax queries and rebuilds them from known keys only', async () => {
+    const spy = stubFetch(() => new Response('{"rows":[]}', { headers: { 'content-type': 'application/json' } }));
+    const q = 'gamelog=query&mode=games&sport=nfl&season=2025&seasons=nfl:2025&fromMD=10-12&toMD=10-12&sort=rax&dir=desc&limit=500';
+    const res = await call(`/api/proxy/rateboard?path=api/rax&${q}&admin=1`);
+    expect(res.status).toBe(200);
+    const url = String(spy.mock.calls[0][0]);
+    expect(url.startsWith('https://rateboard-cgi.pages.dev/api/rax?')).toBe(true);
+    expect(url).toContain('fromMD=10-12');
+    expect(url).not.toContain('admin');
+  });
+
+  it('refuses api/rax queries outside the allow-list', async () => {
+    const spy = stubFetch(() => new Response('{}'));
+    for (const q of ['golf=allevents&sport=golf', 'gamelog=top&sport=nfl&season=2025', 'gamelog=query&mode=games&sport=nfl&season=2025&seasons=nfl:2025&limit=9999', '']) {
+      expect((await call(`/api/proxy/rateboard?path=api/rax&${q}`)).status).toBe(400);
     }
     expect(spy).not.toHaveBeenCalled();
   });

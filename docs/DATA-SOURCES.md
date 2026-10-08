@@ -14,8 +14,8 @@ A single-page app plus a small Cloudflare Pages backend. Endpoints (observed fro
 | `GET /api/players?sport&q` | Player autocomplete from a roster index built from public sports data, refreshed in the background | **Yes** |
 | `GET /api/collection?username&sport&start&hashId` | **The live bridge to Real.** Returns a user's cards per player (`name`, `total`, `totalValue`) in chunks (`hashId`, `hasMore`, `nextStart`); responses cached ~2 h (`x-cache`); errors read `RS user "x" not found` (RS = Real Sports) | **Yes** (Tab 1, 2, 5) |
 | `GET /api/ufc` | UFC fighter metadata (status, age, record, division, last fight) from UFC.com, ~550 fighters | **Yes** (status chips on UFC rows in Tab 1 offers, Tab 3 demand and Tab 5 holdings) |
-| `POST /api/scan` | Sends screenshots to an LLM (Rateboard's paid API key) to read a "Top players" list | **No** — their cost; link out instead |
-| `GET /api/rax?…gamelog=…` | Per-game "rax" game logs across seasons (e.g. golf, 4–6k rows/season) — the data behind Rateboard's **Game data** panel, which its UI hides except for admins/grantees | **No** — deliberately access-gated |
+| `POST /api/scan` | Sends screenshots to an LLM (Rateboard's paid API key) to read a "Top players" list | **No** — permitted, but nothing here needs it and each call costs Dennis money |
+| `GET /api/rax?gamelog=seasons\|query&mode=players\|games&sport&season&seasons&q&sort&dir&limit&offset&fromMD&toMD` | Per-game and per-season "rax" logs (NFL, NBA, MLB, NHL, NCAAF, NCAAM, golf, soccer, WNBA; ~40 sport-seasons). `mode=games` rows: day, player, team, rax, rating; `mode=players` rows: season totals, owners. Max 500 rows per request. | **Yes — with Dennis's permission (his email: any and all routes).** Proxy allow-list in `shared/rax.ts`; powers Tab 4 and the owners / Rax chips |
 
 **How Rateboard gets Real data (inferred):** its backend queries Real's authenticated API with its own session (hence the 2-hour cache and the random 0–10 s "stagger" that spreads load on Real). We can't see that code.
 
@@ -51,8 +51,8 @@ Endpoints the client calls — grouped by the tab they'd serve:
 |---|---|---|
 | 1 Rateboard | Everything (board, search, pull, sign-in, offers) | — |
 | 2 Scout | Collection pull (Rateboard) for matching | Auction feed, contenders |
-| 3 Volatility | **Rateboard demand panel** (live offers, buyers, rate spread, floors, keep list, UFC status) | Price history, spikes, forecast |
-| 4 OTD | — | Games database (import your own) |
+| 3 Volatility | **Rateboard demand panel** (live offers, buyers, rate spread, floors, keep list, UFC status, owners, season Rax) | Price history, spikes, forecast — no route carries card prices |
+| 4 OTD | **Games database** — per-date anniversaries, per-card calendars, owned-card optimizer, ROI and compare (Rax logs; NFL/NBA/MLB/NHL/CFB/CBB/golf) | Sample only if the feed is down; soccer / WNBA / UFC not covered |
 | 5 Portfolio | Image CDN (`media.realapp.com`) + collection pull + Rateboard best-offer prices + UFC status | Live-game yield (you enter it) |
 | 6 Quads | **Schedule, times, broadcasters, live status** (ESPN public scoreboards, free) | Poll percentages; pace/polls are estimates |
 
@@ -60,7 +60,7 @@ ESPN's scoreboard JSON is unofficial and unguaranteed, but unauthenticated and f
 
 ## 4. Ways to get real auction / OTD / poll data, easiest first
 
-1. **Ask Rateboard's owner.** (Dennis has OK'd use of his public endpoints, and every one of them is now used. `/api/rax` and `/api/scan` are not among them: his UI gates the first to admins/grantees and the second spends his LLM budget, so they stay off until he confirms them explicitly.) They already hold a working Real connection and a per-game rax dataset (`/api/rax`). Ask for (a) read access or a key for the game-data endpoint, (b) a read-only marketplace/auction snapshot endpoint if they have one. Free, fast, and the data is built to be shared — this is the best next step.
+1. **Ask Rateboard's owner.** (Dennis has OK'd use of any and all of his routes. Every read route is now used; `/api/scan` is the only one left unwired — no feature needs it, and it spends his LLM budget.) They already hold a working Real connection and a per-game rax dataset (`/api/rax`). Ask for (a) read access or a key for the game-data endpoint, (b) a read-only marketplace/auction snapshot endpoint if they have one. Free, fast, and the data is built to be shared — this is the best next step.
 2. **Ask Real** for API access or a partnership/data agreement. Slow but the only fully legitimate route to marketplace data.
 3. **Import what you can copy from your own session.** Tab 2 imports auction JSON (schema-agnostic field mapping, local only) and Tab 4 imports historical games. See [CAPTURE-GUIDE.md](CAPTURE-GUIDE.md). Free, manual, and legitimate.
 4. **Not recommended:** automating a logged-in account or forging Real's request tokens — against the terms, fragile, and a ban risk.

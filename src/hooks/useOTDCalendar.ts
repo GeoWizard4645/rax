@@ -2,7 +2,9 @@ import { useCallback, useMemo, useState } from 'react';
 import { DEFAULT_SPORT_MULT } from '../../shared/formulas';
 import { parseGamesInput, toMonthDay, type SportMult } from '../../shared/otd';
 import { sampleOtdGames } from '../../shared/sample';
+import { fetchDayGames } from '../lib/raxClient';
 import { load, remove, save } from '../lib/storage';
+import { useAsync } from '../lib/useAsync';
 import type { HistoricalGame } from '../types/real';
 
 const GAMES_KEY = 'rax_otd_games_v1';
@@ -12,14 +14,16 @@ const MULT_KEY = 'rax_otd_sport_mult_v1';
 export const localMonthDay = (d = new Date()) => toMonthDay(new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())));
 
 /**
- * The OTD historical games database. Starts as SAMPLE data; importing a CSV/JSON replaces it (kept in this
- * browser's storage). Sport multipliers are user-editable because the spec gives none.
+ * The OTD historical games database for one calendar day (`md`, MM-DD). Live from Rateboard's Rax data (the biggest
+ * games of that date across every collected season); importing a CSV/JSON overrides it (kept in this browser's
+ * storage); sample data is used only if the live feed fails. Sport multipliers are user-editable.
  */
-export function useOTDCalendar() {
+export function useOTDCalendar(md: string = localMonthDay()) {
   const [imported, setImported] = useState<HistoricalGame[] | null>(() => load<HistoricalGame[] | null>(GAMES_KEY, null));
   const [sportMult, setSportMultState] = useState<SportMult>(() => ({ ...DEFAULT_SPORT_MULT, ...load<Partial<SportMult>>(MULT_KEY, {}) }));
   const [derivedBase, setDerivedBase] = useState(false);
   const sample = useMemo(() => sampleOtdGames(), []);
+  const live = useAsync((signal) => fetchDayGames(md, signal), [md], !imported);
 
   const importGames = useCallback((text: string) => {
     const r = parseGamesInput(text);
@@ -43,6 +47,8 @@ export function useOTDCalendar() {
     save(MULT_KEY, s);
   }, []);
 
-  const games = imported ?? sample;
-  return { games, source: imported ? ('imported' as const) : ('sample' as const), derivedBase, importGames, resetToSample, sportMult, setSportMult };
+  const liveGames = live.data && live.data.length ? live.data : null;
+  const games = imported ?? liveGames ?? (live.loading ? [] : sample);
+  const source = imported ? ('imported' as const) : liveGames ? ('live' as const) : ('sample' as const);
+  return { games, source, loading: !imported && live.loading, liveError: !imported && !liveGames && !live.loading ? live.error ?? 'No games found for that date.' : null, reloadLive: live.reload, derivedBase, importGames, resetToSample, sportMult, setSportMult };
 }
