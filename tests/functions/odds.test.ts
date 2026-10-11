@@ -170,9 +170,28 @@ describe('Kalshi snapshot fallback (Kalshi 429s Cloudflare IPs)', () => {
     expect(k.count).toBeGreaterThan(0);
     expect(k.error).toBeUndefined();
     expect(k.note).toMatch(/snapshot taken 30 s ago/);
-    expect(calls.find((c) => c.url.includes('raw.githubusercontent.com'))!.url).toMatch(/\?t=\d+$/); // cache-buster
     expect(b.events.some((e) => e.markets.some((m) => m.source === 'kalshi'))).toBe(true);
     expect(calls.filter((c) => c.url.includes('raw.githubusercontent.com'))).toHaveLength(1);
+  });
+
+  it('reads the snapshot from D1 first (no GitHub fetch) and keeps Kalshi for live games while it is fresh', async () => {
+    stub(kalshiBlocked);
+    const body = JSON.stringify(snapshot(0.5));
+    const env = { ODDS_DB: { prepare: () => ({ bind: () => ({ first: async () => ({ body }) }) }) } };
+    const b = (await J(await (onRequest as any)({ request: new Request('https://rax.test/api/odds/events?sport=NHL'), env, waitUntil() {} }))) as OddsResponse;
+    const k = b.sources.find((s) => s.source === 'kalshi')!;
+    expect(k.ok).toBe(true);
+    expect(k.error).toBeUndefined();
+    expect(k.note).toMatch(/snapshot taken 30 s ago/);
+    expect(calls.some((c) => c.url.includes('raw.githubusercontent.com'))).toBe(false);
+  });
+
+  it('falls back to the GitHub branch when D1 has no row or throws', async () => {
+    stub({ ...kalshiBlocked, 'raw.githubusercontent.com': ok(snapshot(0.5)) });
+    const env = { ODDS_DB: { prepare: () => ({ bind: () => ({ first: async () => { throw new Error('d1 down'); } }) }) } };
+    const b = (await J(await (onRequest as any)({ request: new Request('https://rax.test/api/odds/events?sport=NHL'), env, waitUntil() {} }))) as OddsResponse;
+    expect(b.sources.find((s) => s.source === 'kalshi')!.ok).toBe(true);
+    expect(calls.some((c) => c.url.includes('raw.githubusercontent.com'))).toBe(true);
   });
 
   it('flags an 8-minute-old snapshot as STALE (partial) but still uses it', async () => {

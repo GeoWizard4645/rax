@@ -1,6 +1,10 @@
 export interface Env {
   /** Rolling market history (hourly snapshots). Optional — without it, only sample data is served. */
   CACHE?: KVNamespace;
+  /** D1 holding the latest Kalshi snapshot per sport (see migrations/0001_kalshi_snapshot.sql). Optional — falls back to the GitHub branch. */
+  ODDS_DB?: D1Database;
+  /** Shared secret the odds-snapshot GitHub Actions loop sends to POST /api/odds/kalshi-push. Unset ⇒ pushes are refused. */
+  KALSHI_PUSH_SECRET?: string;
   /** Pages static-asset binding — used to read the bundled bid-rate seed (public/data/rb-rates-seed.json). */
   ASSETS?: { fetch(input: Request | string): Promise<Response> };
   /** Base URL of Real's API, e.g. https://api.example.com — required by /api/proxy/real. */

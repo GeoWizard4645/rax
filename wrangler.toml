@@ -20,3 +20,10 @@ CDN_ALLOWED_HOSTS = "media.realapp.com"
 # Only set these for an upstream you are authorised to call — see docs/DATA-SOURCES.md.
 # REAL_API_BASE = "https://<authorised-upstream>"
 # AUCTIONS_ENDPOINT = "v1/auctions"
+
+# Latest Kalshi snapshot per sport (pushed from GitHub Actions; Kalshi blocks Cloudflare's IPs). Free tier: 100k row writes/day.
+# Created with `wrangler d1 create rax-odds`; schema in migrations/. Also needs the KALSHI_PUSH_SECRET Pages secret.
+[[d1_databases]]
+binding = "ODDS_DB"
+database_name = "rax-odds"
+database_id = "582cb5cf-4e32-433f-98e7-153b33439d5a"

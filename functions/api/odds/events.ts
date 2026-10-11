@@ -29,8 +29,9 @@ const TTL = 45;
  * snapshot taken by a GitHub Actions job (.github/workflows/odds-snapshot.yml → orphan branch `odds-data`). It is at most
  * ~10–15 min old and is reported as such in `sources[]`. Single-sport requests only (ALL would need many more subrequests).
  */
-// raw.githubusercontent.com caches each URL for ~5 min; a per-30 s query string makes it fetch the current file instead.
-const SNAPSHOT_URL = (sport: string, nowMs: number) => `https://raw.githubusercontent.com/GeoWizard4645/rax/odds-data/kalshi/${sport}.json?t=${Math.floor(nowMs / 30_000)}`;
+// Fallback only: raw.githubusercontent.com caches each file for ~5 min and ignores query strings (tested 2026-10-11), so the
+// primary path is D1 (see kalshi-push.ts). `nowMs` is unused, kept for the signature.
+const SNAPSHOT_URL = (sport: string, _nowMs: number) => `https://raw.githubusercontent.com/GeoWizard4645/rax/odds-data/kalshi/${sport}.json`;
 const SNAPSHOT_MAX_AGE_MS = 3 * 3600_000; // older than this the data is dropped
 const SNAPSHOT_STALE_MIN = 5; // the snapshot job refreshes every ~40 s; beyond this the status note says STALE
 /** A snapshot this fresh is still shown for games in progress (labelled); older ones are hidden for live games. */
@@ -41,13 +42,26 @@ interface KalshiSnapshot {
   payloads: Array<{ id: string; spec: KalshiPayload['spec']; json: unknown }>;
 }
 
-async function loadKalshiSnapshot(sport: OddsSport, wanted: Set<string>, nowMs: number): Promise<{ payloads: KalshiPayload[]; ageMin: number; ageSec: number } | null> {
+/** Latest pushed snapshot: D1 first (written every ~40 s by the GitHub loop), else the orphan branch via raw.githubusercontent.com (≤ 5 min CDN lag). */
+async function readSnapshot(sport: OddsSport, nowMs: number, db?: D1Database): Promise<KalshiSnapshot | null> {
+  if (db) {
+    try {
+      const row = await db.prepare('SELECT body FROM kalshi_snapshot WHERE sport = ?1').bind(sport).first<{ body: string }>();
+      if (row?.body) return JSON.parse(row.body) as KalshiSnapshot;
+    } catch {
+      /* D1 unavailable → fall through to the branch copy */
+    }
+  }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  const r = await fetch(SNAPSHOT_URL(sport, nowMs), { headers: { Accept: 'application/json' }, signal: ctl.signal }).finally(() => clearTimeout(timer));
+  return r.ok ? ((await r.json()) as KalshiSnapshot) : null;
+}
+
+async function loadKalshiSnapshot(sport: OddsSport, wanted: Set<string>, nowMs: number, db?: D1Database): Promise<{ payloads: KalshiPayload[]; ageMin: number; ageSec: number } | null> {
   try {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
-    const r = await fetch(SNAPSHOT_URL(sport, nowMs), { headers: { Accept: 'application/json' }, signal: ctl.signal }).finally(() => clearTimeout(timer));
-    if (!r.ok) return null;
-    const snap = (await r.json()) as KalshiSnapshot;
+    const snap = await readSnapshot(sport, nowMs, db);
+    if (!snap) return null;
     const age = nowMs - Date.parse(snap.generatedAt);
     if (!(age >= -60_000 && age <= SNAPSHOT_MAX_AGE_MS)) return null;
     const payloads = snap.payloads.filter((p) => wanted.has(p.id)).map((p) => ({ spec: p.spec, json: p.json, asOf: snap.generatedAt }));
@@ -109,7 +123,7 @@ async function runJobs(jobs: FanoutJob[]): Promise<PromiseSettledResult<unknown>
   return out;
 }
 
-export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
+export const onRequest: PagesFunction<Env> = async ({ request, waitUntil, env }) => {
   if (request.method === 'OPTIONS') return preflight();
   if (request.method !== 'GET') return err(405, 'method_not_allowed', 'GET only.');
   const q = (new URL(request.url).searchParams.get('sport') || 'ALL').toUpperCase();
@@ -155,7 +169,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
     let snapStale = false;
     const kj = jobs.filter((j) => j.source === 'kalshi');
     if (sport !== 'ALL' && kj.length && status.get('kalshi')!.ok === 0) {
-      const snap = await loadKalshiSnapshot(sport, new Set(kj.map((j) => j.id)), nowMs);
+      const snap = await loadKalshiSnapshot(sport, new Set(kj.map((j) => j.id)), nowMs, env?.ODDS_DB);
       if (snap) {
         kalshi.push(...snap.payloads);
         kalshiFromSnapshot = true;

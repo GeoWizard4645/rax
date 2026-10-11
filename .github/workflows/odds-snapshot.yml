@@ -38,6 +38,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          KALSHI_PUSH_SECRET: ${{ secrets.KALSHI_PUSH_SECRET }}
+          PUSH_URL: https://rax.vivaanshahani.com/api/odds/kalshi-push
         run: |
           OUT="$RUNNER_TEMP/out"
           mkdir -p "$OUT/kalshi" && cd "$OUT"
@@ -48,16 +50,28 @@ jobs:
           # Seed with the previous snapshot so cold sports keep their files across restarts.
           git fetch -q --depth=1 "$REMOTE" odds-data 2>/dev/null && git archive FETCH_HEAD kalshi 2>/dev/null | tar -x || true
 
+          # Files newer than $MARK were rewritten by the current cycle → push those to the site (D1) too.
+          MARK="$RUNNER_TEMP/mark"; touch "$MARK"
+
           END=$(( $(date +%s) + 350*60 ))
           HANDED_OVER=0
           FAILS=0
           while [ "$(date +%s)" -lt "$END" ]; do
             START=$(date +%s)
+            touch "$RUNNER_TEMP/mark.new"
             # Start the successor one cycle early so the next run is already queued when this one exits.
             if [ "$HANDED_OVER" = 0 ] && [ $(( END - START )) -lt 120 ]; then
               gh workflow run odds-snapshot.yml --repo "$REPO" --ref "${GITHUB_REF_NAME}" && HANDED_OVER=1 || true
             fi
             if node "$RUNNER_TEMP/ks.mjs" "$OUT/kalshi"; then
+              # Fast path: POST straight to the site (stored in D1, read by /api/odds/events). raw.githubusercontent.com caches 5 min.
+              if [ -n "$KALSHI_PUSH_SECRET" ]; then
+                for f in $(find "$OUT/kalshi" -name '*.json' -newer "$MARK"); do
+                  curl -sS -f --max-time 20 --retry 2 -X POST -H "Authorization: Bearer $KALSHI_PUSH_SECRET" -H 'Content-Type: application/json' \
+                    --data-binary @"$f" "$PUSH_URL?sport=$(basename "$f" .json)" -o /dev/null || echo "site push failed for $f"
+                done
+              fi
+              mv "$RUNNER_TEMP/mark.new" "$MARK"
               git add -A
               if git rev-parse -q --verify HEAD >/dev/null; then
                 git commit -q --amend --allow-empty -m "Kalshi snapshot $(date -u +%FT%TZ)"
