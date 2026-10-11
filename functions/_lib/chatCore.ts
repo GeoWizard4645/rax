@@ -135,11 +135,15 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
     const final = iter === MAX_ITERATIONS; // out of tool rounds: force a plain answer
     let res;
     deps.onStatus?.(iter === 0 ? 'Thinking…' : 'Putting it together…');
+    const convo = [...history, ...added];
+    let think = false;
     try {
-      const convo = [...history, ...added];
-      // reasoning is switched on when the model is about to read tool results back to the user
-      const think = final || convo[convo.length - 1]?.role === 'tool';
-      res = await runModel(deps.ai, model, convo, final ? `${system}\n\nAnswer now using what you have; do not call tools.` : system, final ? [] : MODEL_TOOLS, 900, think);
+      // Reasoning stays ON except for pure page commands / greetings: with it off the model once quoted a wrong multiplier from a
+      // retrieved passage and once reported a +EV result as "not +EV". The cost is ~2 s and ~3 neurons per call.
+      const last = convo[convo.length - 1];
+      const lite = last?.role === 'user' && (COMMAND.test(last.content ?? '') || GREETING.test(last.content ?? '')) && !/\b(why|how|what|explain|tell me|\?)/i.test(last.content ?? '');
+      think = final || !lite;
+      res = await runModel(deps.ai, model, convo, final ? `${system}\n\nAnswer now using what you have; do not call tools.` : system, final ? [] : MODEL_TOOLS, think ? 1500 : 900, think);
     } catch (e) {
       if (e instanceof ModelError && e.kind === 'quota') {
         await exhaust(deps.env, now);
@@ -154,6 +158,16 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
       return { ok: false, code: 'model_error', message: `The AI model failed: ${e instanceof Error ? clip(e.message, 200) : 'unknown error'}` };
     }
     await record(deps.env, res.neurons ?? estimateNeurons(model, res.promptTokens, res.completionTokens), now);
+    if (!res.toolCalls.length && !res.content && think) {
+      // the reasoning ate the whole token budget and nothing was said: ask once more with reasoning off
+      deps.onStatus?.('Putting it together…');
+      try {
+        res = await runModel(deps.ai, model, convo, final ? `${system}\n\nAnswer now using what you have; do not call tools.` : system, final ? [] : MODEL_TOOLS, 900, false);
+        await record(deps.env, res.neurons ?? estimateNeurons(model, res.promptTokens, res.completionTokens), now);
+      } catch {
+        /* fall through to the generic reply below */
+      }
+    }
 
     if (!res.toolCalls.length || final) {
       added.push({ role: 'assistant', content: res.content || "I couldn't put together an answer — could you rephrase?" });

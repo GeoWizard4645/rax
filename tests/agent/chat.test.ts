@@ -213,12 +213,14 @@ describe('prompt economy', () => {
     const q = await run([say('ok')], [user('how do I set the budget so the combination is realistic?')]);
     expect(q.ai.calls[0].input.messages[0].content).toContain('Reference passages');
   });
-  it('thinks only when reading tool results, and uses the terse tool descriptions', async () => {
-    const { ai } = await run([say('ok')], [user('hello there')]);
-    expect(ai.calls[0].input.chat_template_kwargs).toEqual({ enable_thinking: false });
-    const two = await run([callTool('calculate', { expression: '1+1' }), say('2')], [user('1+1?')]);
-    expect(two.ai.calls.map((c) => c.input.chat_template_kwargs.enable_thinking)).toEqual([false, true]);
-    const calc = ai.calls[0].input.tools.find((t: any) => t.function.name === 'calculate');
+  it('thinks by default, but not for pure page commands or greetings; terse tool descriptions', async () => {
+    const q = await run([say('ok')], [user('what multiplier does mystic 10 have?')]);
+    expect(q.ai.calls[0].input.chat_template_kwargs).toEqual({ enable_thinking: true });
+    const cmd = await run([say('ok')], [user('set the budget to 50k')]);
+    expect(cmd.ai.calls[0].input.chat_template_kwargs).toEqual({ enable_thinking: false });
+    const hi = await run([say('ok')], [user('hello')]);
+    expect(hi.ai.calls[0].input.chat_template_kwargs).toEqual({ enable_thinking: false });
+    const calc = hi.ai.calls[0].input.tools.find((t: any) => t.function.name === 'calculate');
     expect(calc.function.description.length).toBeLessThan(150);
   });
   it('uses the neurons Workers AI reports when present', async () => {
@@ -241,5 +243,14 @@ describe('KV write economy', () => {
     // a quota error flushes immediately so every isolate sees the day as spent
     await run([() => { throw new Error('4006: daily free allocation used up'); }], [user('boom')], e);
     expect(Number(store.get([...store.keys()][0]))).toBeGreaterThan(7900);
+  });
+});
+
+describe('empty reasoning-only replies', () => {
+  it('retries once with reasoning off when the model produced no text', async () => {
+    const empty = () => ({ choices: [{ message: { content: '' } }], usage: { prompt_tokens: 10, completion_tokens: 900 } });
+    const { res, ai } = await run([empty, say('Here is the answer.')], [user('what is the cap on Mystic 10?')]);
+    expect(ai.calls.map((c) => c.input.chat_template_kwargs.enable_thinking)).toEqual([true, false]);
+    expect(res.ok && res.messages.at(-1)!.content).toBe('Here is the answer.');
   });
 });

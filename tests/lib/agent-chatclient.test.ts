@@ -49,6 +49,15 @@ describe('chat client', () => {
     expect(client.getState().budgetLeft).toBe(0.8);
   });
 
+  it('stops when the model keeps repeating the same page call', async () => {
+    const c = call('get_page_state', { tab: 'scout' });
+    const fetchMock = vi.fn(async () => json({ ok: true, type: 'tool_calls', messages: [{ role: 'assistant', content: '', tool_calls: [{ ...c, id: `c${Math.random()}` }] }], calls: [{ ...c, id: `c${Math.random()}` }], model: 'm' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await client.send('what is going on?');
+    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(client.getState().msgs.at(-1)!.text).toMatch(/repeating myself/);
+  });
+
   it('falls back to the offline helper when the allowance is spent', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ ok: false, code: 'budget', message: 'used up' })));
     await client.send('hello?');

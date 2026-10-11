@@ -52,7 +52,7 @@ The assistant can: set `source` (rateboard / imported / sample), `sport` (ALL or
 
 ## Tab 6 — Quads (`/quads`)
 
-Quads are 4-person squads that earn Karma-based Rax payouts together (payout reference table on the page). *Matchups & polls* ranks upcoming games by Karma opportunity (pace × polls per game; schedule is live from ESPN's public scoreboards, **poll percentages are synthetic**); *Squad board* tracks your partners. The assistant can switch `view` and select a `game`.
+Quads are 4-person squads that earn Karma-based Rax payouts together. Payout per teammate (squad of 4): **top 50% finish = 50 Rax** (200 for the squad), **top 20% = 100 Rax** (400), **top 10 squads = 200 Rax** (800); the same table is on the page and in the `quads_payouts` tool. *Matchups & polls* ranks upcoming games by Karma opportunity (pace × polls per game; schedule is live from ESPN's public scoreboards, **poll percentages are synthetic**); *Squad board* tracks your partners. The assistant can switch `view` and select a `game`.
 
 ## Tab 7 — OTD Efficiency (`/efficiency`)
 

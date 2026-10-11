@@ -63,7 +63,7 @@ function localConfirmation(calls: ToolCall[], results: unknown[]): string | null
 }
 
 const KEY = 'rax_chat_v1';
-const MAX_ROUNDS = 6;
+const MAX_ROUNDS = 5;
 let wire: ChatMessage[] = [];
 let state: ChatState = { msgs: [], busy: false, status: '', mode: 'ai', open: false };
 let abort: AbortController | null = null;
@@ -187,6 +187,7 @@ export async function send(text: string): Promise<void> {
     }
     wire.push({ role: 'user', content: t });
     let final: string | null = null;
+    const tried = new Set<string>(); // page-tool calls already made this turn: a model repeating one is going in circles
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const res = await post(signal, (s) => set({ status: s }));
       if (!res.ok) {
@@ -217,6 +218,15 @@ export async function send(text: string): Promise<void> {
         break;
       }
       const results: unknown[] = [];
+      const sigs = (res.calls ?? []).map((c) => `${c.function.name}:${c.function.arguments}`);
+      if (sigs.length && sigs.every((x) => tried.has(x))) {
+        // answer the dangling calls so the history stays well-formed, then stop
+        for (const call of res.calls ?? []) wire.push({ role: 'tool', tool_call_id: call.id, name: call.function.name, content: JSON.stringify({ ok: false, error: 'Duplicate call — use the earlier result.' }) });
+        final = 'I started repeating myself, so I stopped. Could you tell me which tab or setting you mean?';
+        wire.push({ role: 'assistant', content: final });
+        break;
+      }
+      sigs.forEach((x) => tried.add(x));
       for (const call of res.calls ?? []) {
         if (signal.aborted) throw new DOMException('aborted', 'AbortError');
         set({ status: statusFor(call) });
