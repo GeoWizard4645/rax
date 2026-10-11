@@ -10,17 +10,18 @@
  */
 
 /** Sports with per-game OTD data. UFC is intentionally absent (no data source; low priority per community guides). */
-export type OtdSport = 'NFL' | 'NBA' | 'MLB' | 'NHL' | 'CBB' | 'CFB' | 'PGA' | 'WNBA' | 'SOC';
+export type OtdSport = 'NFL' | 'NBA' | 'MLB' | 'NHL' | 'CBB' | 'CFB' | 'PGA' | 'WNBA' | 'SOC' | 'UFC';
 
-export const OTD_SPORTS: OtdSport[] = ['NFL', 'NBA', 'MLB', 'NHL', 'CBB', 'CFB', 'PGA', 'WNBA', 'SOC'];
+export const OTD_SPORTS: OtdSport[] = ['NFL', 'NBA', 'MLB', 'NHL', 'CBB', 'CFB', 'PGA', 'WNBA', 'SOC', 'UFC'];
 
 /** Rateboard /api/rax sport key ↔ OtdSport. */
 export const RAX_KEY_TO_OTD: Record<string, OtdSport> = {
   nfl: 'NFL', nba: 'NBA', mlb: 'MLB', nhl: 'NHL', ncaam: 'CBB', ncaaf: 'CFB', golf: 'PGA', wnba: 'WNBA', soccer: 'SOC',
-};
-export const OTD_TO_RAX_KEY: Record<OtdSport, string> = Object.fromEntries(
-  Object.entries(RAX_KEY_TO_OTD).map(([k, v]) => [v, k]),
-) as Record<OtdSport, string>;
+};  // (UFC has no Rateboard rax feed; UFC cards only arrive through a RaxEdge import)
+export const OTD_TO_RAX_KEY: Record<OtdSport, string> = {
+  ...(Object.fromEntries(Object.entries(RAX_KEY_TO_OTD).map(([k, v]) => [v, k])) as Record<string, string>),
+  UFC: 'ufc',
+} as Record<OtdSport, string>;
 
 /** Bit flags on a day entry. */
 export const DAY_POSTSEASON = 1;
@@ -50,6 +51,12 @@ export interface OtdCardRecord {
   annual: number;
   /** Best single game. */
   best: number;
+  /**
+   * Cards that don't follow the player rarity ladder (team cards, UFC fighters — imported from RaxEdge) carry their own
+   * multiplier and cap; the optimizer uses these instead of a ladder rung.
+   */
+  fixed?: { multiplier: number; annualCap: number | null; label: string };
+  kind?: 'player' | 'team' | 'fighter';
   /**
    * Claimable anniversaries, one per game, sorted by mmdd. May be truncated to games with rax ≥ `minDayRax`
    * (see snapshot) — `annual` still includes the dropped small games.
@@ -92,5 +99,26 @@ export function seasonLabelFor(sport: OtdSport, season: number): string {
       return `${String(season - 1).slice(2)}-${String(season).slice(2)}`;
     default:
       return String(season);
+  }
+}
+
+/**
+ * Calendar year in which a game of this card's season was actually played, from the season label and the game's month.
+ * Needed because OTD pays on the ANNIVERSARY of a game: a game played in 2026 can't pay until 2027.
+ * Label conventions (Rax / RaxEdge): NFL/NHL/CFB/soccer = start year; NBA/CBB = end year; MLB/golf/WNBA/UFC = the year.
+ */
+export function gameYear(sport: OtdSport, season: number, mmddValue: number): number {
+  const month = Math.floor(mmddValue / 100);
+  switch (sport) {
+    case 'NFL':
+    case 'NHL':
+    case 'CFB':
+    case 'SOC':
+      return month >= 7 ? season : season + 1;
+    case 'NBA':
+    case 'CBB':
+      return month >= 8 ? season - 1 : season;
+    default:
+      return season;
   }
 }

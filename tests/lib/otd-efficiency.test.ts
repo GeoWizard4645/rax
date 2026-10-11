@@ -247,3 +247,47 @@ describe('Pro bonus claim', () => {
     expect(cal.reduce((n, c) => n + c.bonus, 0)).toBe(3 * 150);
   });
 });
+
+describe('multi-year views', () => {
+  const c = card('a', 'NBA', [[105, 10], [701, 20]]);
+  const yr = { start: new Date(Date.UTC(2026, 0, 1)), days: 365 };
+  it('repeats the one-year window N times (uncapped)', () => {
+    const one = rankCards([c], base({ window: yr }))[0];
+    const five = rankCards([c], base({ window: yr, years: 5 }))[0];
+    expect(five.windowEarn).toBe(one.windowEarn * 5);
+    expect(five.annualEarn).toBe(one.annualEarn);
+  });
+  it('a lifetime cap limits the total, a yearly cap does not', () => {
+    const capped = { annualCap: 3000 };
+    const yearly = rankCards([c], base({ window: yr, years: 5, ...capped }))[0];
+    const lifetime = rankCards([c], base({ window: yr, years: 5, capLifetime: true, ...capped }))[0];
+    expect(yearly.windowEarn).toBe(3000 * 5);
+    expect(lifetime.windowEarn).toBeCloseTo(3000);
+  });
+  it('portfolio totals scale with years', () => {
+    const p1 = buildPortfolio([c], base({ window: yr, priceOf: () => 100 }), { budget: 1e9, maxCards: 3, minMarginalRoi: 0 });
+    const p5 = buildPortfolio([c], base({ window: yr, years: 5, priceOf: () => 100 }), { budget: 1e9, maxCards: 3, minMarginalRoi: 0 });
+    expect(p5.totalEarn).toBe(p1.totalEarn * 5);
+  });
+});
+
+describe('anniversaries only pay for games from earlier years', () => {
+  const win = { start: new Date(Date.UTC(2026, 9, 1)), days: 20 }; // Oct 1–20, 2026
+  const recent = { ...card('now', 'MLB', [[1005, 50]]), season: 2026 }; // played 2026-10-05 — can't pay until 2027
+  const old = { ...card('old', 'MLB', [[1005, 40]]), season: 2025 }; // played 2025-10-05 → pays 2026-10-05
+  const nhl = { ...card('nhl', 'NHL', [[1008, 30]]), season: 2026 }; // 26-27 season, game on 2026-10-08
+  it('a game from this calendar year is not claimable yet', () => {
+    const cal = buildCalendar([recent, old, nhl], base({ window: win, sports: new Set(['MLB', 'NHL'] as const) }));
+    expect(cal.reduce((n, c) => n + c.claimed, 0)).toBe(40 * 150);
+  });
+  it('but pays in the following year', () => {
+    const next = { start: new Date(Date.UTC(2027, 9, 1)), days: 20 };
+    const cal = buildCalendar([recent, old, nhl], base({ window: next, sports: new Set(['MLB', 'NHL'] as const) }));
+    expect(cal.reduce((n, c) => n + c.claimed, 0)).toBe((50 + 30 + 40) * 150 - 0);
+  });
+  it('multi-year windows count this year\'s games from the second repeat on', () => {
+    const r = rankCards([recent], base({ window: win, years: 3, sports: new Set(['MLB'] as const) }))[0];
+    expect(r.windowEarn).toBe(50 * 2 * 150); // years 2 and 3 only
+    expect(r.windowGames).toBe(0);
+  });
+});

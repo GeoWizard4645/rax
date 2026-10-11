@@ -4,7 +4,7 @@ import { ICONIC_LEVELS, RARITY_LADDER, capFor, multiplierFor } from '../../../sh
 import { cloneParams, DEFAULT_PRICE_PARAMS, estimateCardPrice, type PriceEstimate, type PriceParams } from '../../../shared/otdPricing';
 import type { OtdCardRecord, OtdSport } from '../../../shared/otdSnapshot';
 
-export type WindowPreset = '7' | '30' | '90' | '180' | '365' | 'custom';
+export type WindowPreset = '7' | '30' | '90' | '180' | '365' | '5y' | '10y' | 'custom';
 
 export interface EffState {
   method: 'observed' | 'modeled';
@@ -12,6 +12,8 @@ export interface EffState {
   customDays: number;
   /** ISO date (YYYY-MM-DD) the window starts. '' = today. */
   start: string;
+  /** 5/10-year views: is a card's cap a lifetime total (true) or does it reset every year (false, the working assumption)? */
+  capLifetime: boolean;
   /** Pro's bonus claim: assumed poll win probability (0–1). 0 = ignore the bonus. */
   proWin: number;
   /** A rung key, or 'AUTO'. */
@@ -48,6 +50,7 @@ export const DEFAULT_STATE: EffState = {
   preset: '90',
   customDays: 45,
   start: '',
+  capLifetime: false,
   proWin: 0.5,
   rarity: 'Iconic',
   autoMin: 'Epic',
@@ -69,7 +72,8 @@ export const DEFAULT_STATE: EffState = {
 /** Every selectable rung, in ladder order. */
 export const RUNG_KEYS: string[] = [...RARITY_LADDER.filter((r) => r.otdEligible).map((r) => r.key), ...ICONIC_LEVELS.map((l) => l.key)];
 
-export const windowDays = (s: EffState) => (s.preset === 'custom' ? Math.max(1, Math.min(365, Math.round(s.customDays) || 1)) : +s.preset);
+export const windowYears = (s: EffState) => (s.preset === '5y' ? 5 : s.preset === '10y' ? 10 : 1);
+export const windowDays = (s: EffState) => (s.preset === 'custom' ? Math.max(1, Math.min(365, Math.round(s.customDays) || 1)) : s.preset === '5y' || s.preset === '10y' ? 365 : +s.preset);
 
 export function windowStart(s: EffState): Date {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.start);
@@ -110,6 +114,11 @@ export function buildLevels(cards: OtdCardRecord[], s: EffState): Map<string, Le
   const candidates = RUNG_KEYS.slice(from);
   for (const c of cards) {
     const own = s.ownedLevels[c.id];
+    if (own && c.fixed) {
+      // team card / UFC fighter imported from RaxEdge: its own multiplier and cap, not a ladder rung
+      out.set(c.id, { key: c.fixed.label, multiplier: c.fixed.multiplier, annualCap: c.fixed.annualCap, est: { price: 0, low: 0, high: 0, basis: `You own this (${c.fixed.label})`, confidence: 'documented', method: 'override' } });
+      continue;
+    }
     if (own) {
       const l = levelFor(c, own, 0, pp);
       if (l) out.set(c.id, { ...l, est: { ...l.est, price: 0, low: 0, high: 0, basis: `You own this at ${own}` } });
@@ -138,6 +147,8 @@ export function buildLevels(cards: OtdCardRecord[], s: EffState): Map<string, Le
 export function effParams(s: EffState, levels: Map<string, Level>, sportsOn: ReadonlySet<OtdSport>, window?: { start: Date; days: number }): EfficiencyParams {
   return {
     window: window ?? { start: windowStart(s), days: windowDays(s) },
+    years: window ? 1 : windowYears(s),
+    capLifetime: !window && windowYears(s) > 1 && s.capLifetime,
     claimsPerDay: 2,
     scope: 'per-sport',
     multiplier: 1,

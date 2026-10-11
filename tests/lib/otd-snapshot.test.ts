@@ -18,7 +18,7 @@ describe('observed OTD snapshot — schema invariants', () => {
   });
 
   it('covers every sport, and coverage counts match the cards', () => {
-    expect(snap.coverage.map((c) => c.sport).sort()).toEqual([...OTD_SPORTS].sort());
+    expect(snap.coverage.map((c) => c.sport).sort()).toEqual(OTD_SPORTS.filter((s) => s !== 'UFC').sort()); // UFC only arrives via a RaxEdge import
     for (const cov of snap.coverage) {
       const cards = snap.cards.filter((c) => c.sport === cov.sport);
       expect(cards.length).toBe(cov.cards);

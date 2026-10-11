@@ -1,8 +1,9 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { buildCalendar, type EfficiencyParams } from '../../../shared/otdEfficiency';
 import { matchCollection, parsePasses, type HeldPlayer } from '../../../shared/otdProfile';
 import { annualPayout } from '../../../shared/otdRules';
+import { RAXEDGE_EXPORT_SNIPPET, parseRaxEdgeExport, raxedgeBookmarklet } from '../../../shared/raxedgeImport';
 import type { OtdCardRecord, OtdSport } from '../../../shared/otdSnapshot';
 import type { RbSport } from '../../../shared/rateboard';
 import type { CollectionPlayer } from '../../types/real';
@@ -29,13 +30,19 @@ export default function ProfilePanel({ s, set, cards, params }: { s: EffState; s
   const [paste, setPaste] = useState('');
   const [errs, setErrs] = useState<string[]>([]);
   const [open, setOpen] = useState<string | null>(null);
+  const [reText, setReText] = useState('');
+  const [reMsg, setReMsg] = useState<string | null>(null);
+  const [showCode, setShowCode] = useState(false);
+  const bmRef = useRef<HTMLAnchorElement>(null);
+  // React refuses to render javascript: hrefs, so the bookmarklet link is set on the DOM node directly.
+  useEffect(() => bmRef.current?.setAttribute('href', raxedgeBookmarklet()), []);
 
   const byId = useMemo(() => new Map(cards.map((c) => [c.id, c])), [cards]);
   const owned = useMemo(() => Object.entries(s.ownedLevels).map(([id, level]) => ({ card: byId.get(id), id, level })).filter((x): x is { card: OtdCardRecord; id: string; level: string } => !!x.card), [s.ownedLevels, byId]);
   const cal = useMemo(() => buildCalendar(owned.map((o) => o.card), params), [owned, params]);
   const claimed = cal.reduce((n, c) => n + c.claimed, 0);
   const wasted = cal.reduce((n, c) => n + c.wasted, 0);
-  const annualOwned = owned.reduce((n, o) => n + annualPayout(Math.max(o.card.annual, 0), o.level), 0);
+  const annualOwned = owned.reduce((n, o) => n + (o.card.fixed ? (o.card.fixed.annualCap == null ? o.card.annual * o.card.fixed.multiplier : Math.min(o.card.fixed.annualCap, o.card.annual * o.card.fixed.multiplier)) : annualPayout(Math.max(o.card.annual, 0), o.level)), 0);
 
   const matched = useMemo(() => {
     const held: HeldPlayer[] = [];
@@ -95,6 +102,14 @@ export default function ProfilePanel({ s, set, cards, params }: { s: EffState; s
       setPaste('');
     }
   };
+  const importRaxEdge = () => {
+    const r = parseRaxEdgeExport(reText, cards);
+    if (!Object.keys(r.owned).length) return setReMsg(r.errors[0] ?? 'Nothing to import.');
+    const ids = new Set(r.cards.map((c) => c.id));
+    set({ ownedLevels: { ...s.ownedLevels, ...r.owned }, customCards: [...s.customCards.filter((c) => !ids.has(c.id)), ...r.cards] });
+    setReText('');
+    setReMsg(`Imported ${Object.keys(r.owned).length} passes${r.user ? ` for ${r.user}` : ''} (${r.matchedToDataset} matched the dataset; ${r.cards.filter((c) => c.id.startsWith('re|')).length} more came from RaxEdge's own data, incl. team and UFC cards).${r.errors.length ? ' ' + r.errors[0] : ''}`);
+  };
   const setLevel = (id: string, level: string) => set({ ownedLevels: { ...s.ownedLevels, [id]: level } });
   const remove = (id: string) => { const o = { ...s.ownedLevels }; delete o[id]; set({ ownedLevels: o }); };
 
@@ -102,6 +117,22 @@ export default function ProfilePanel({ s, set, cards, params }: { s: EffState; s
     <div className="space-y-4">
       <div className="rounded-md border border-amber/30 bg-amber/5 px-3 py-2 text-xs leading-relaxed text-amber/90">
         <b>How exact is this?</b> A username pull tells us <i>which players</i> you hold and the <i>total rating</i> across all their seasons (via Rateboard) — not which season a rating sits on, so it can't know each pass's level. For an exact set, paste your passes below (or tick cards in the rankings). Rateboard's pull covers NFL, college football and soccer only.
+      </div>
+
+      <div className="panel">
+        <div className="panel-hd"><h2>Import from RaxEdge (exact levels, team &amp; UFC cards)</h2><span className="chip-emerald">recommended</span></div>
+        <div className="panel-bd space-y-2 text-sm text-muted">
+          <p>If you have a RaxEdge account, this brings in your <b className="text-head">exact</b> passes — each one's real level and per-day earnings, including team cards and UFC fighters. It runs <b className="text-head">in your own browser</b> while you're logged in to RaxEdge; your login never reaches us, and nothing is sent anywhere (it only copies text to your clipboard).</p>
+          <ol className="list-decimal space-y-1 pl-5">
+            <li>Drag this to your bookmarks bar: <a ref={bmRef} href="#" onClick={(e) => e.preventDefault()} className="chip-blue !no-underline" title="Drag to your bookmarks bar">Export RaxEdge → RAX</a> &nbsp;or <button className="underline" onClick={() => setShowCode(!showCode)}>{showCode ? 'hide' : 'show'} the code to paste in the console</button>.</li>
+            <li>Open <b className="text-head">raxedge.com</b>, log in, open the <b className="text-head">On This Day</b> tab, and click the bookmark (it asks for your Real username if none is loaded). Click <b className="text-head">Copy</b> in the box it shows.</li>
+            <li>Paste below and press Import.</li>
+          </ol>
+          {showCode && <textarea readOnly className="field num min-h-[120px] text-[11px]" value={RAXEDGE_EXPORT_SNIPPET} onFocus={(e) => e.currentTarget.select()} aria-label="Export code" />}
+          <textarea className="field num min-h-[70px]" value={reText} onChange={(e) => setReText(e.target.value)} placeholder='Paste the export here ({"v":1,"user":…)' aria-label="RaxEdge export" />
+          <div className="flex items-center gap-2"><button className="btn-primary btn-sm" disabled={!reText.trim()} onClick={importRaxEdge}>Import</button>{reMsg && <span className="text-xs">{reMsg}</span>}</div>
+          <p className="hint">Team and UFC multipliers/caps follow RaxEdge's tables (team: 1.2×–6×, UFC: 1×–24.5×); Real's own team-card page may differ — treat those as approximate.</p>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -149,9 +180,9 @@ export default function ProfilePanel({ s, set, cards, params }: { s: EffState; s
                 {owned.map((o) => (
                   <tr key={o.id}>
                     <td><span className="font-medium">{o.card.name}</span> <span className="chip-muted">{o.card.sport}</span> <span className="num text-xs text-muted">{o.card.seasonLabel}</span></td>
-                    <td><select className="field !w-auto !py-0.5" value={o.level} onChange={(e) => setLevel(o.id, e.target.value)} aria-label={`Level of ${o.card.name}`}>{RUNG_KEYS.map((k) => <option key={k}>{k}</option>)}</select></td>
+                    <td>{o.card.fixed ? <span className="text-xs">{o.card.fixed.label} · {o.card.fixed.multiplier}×</span> : <select className="field !w-auto !py-0.5" value={o.level} onChange={(e) => setLevel(o.id, e.target.value)} aria-label={`Level of ${o.card.name}`}>{RUNG_KEYS.map((k) => <option key={k}>{k}</option>)}</select>}</td>
                     <td className="r num text-muted">{rax(o.card.annual)}</td>
-                    <td className="r num font-semibold text-emerald">{rax(annualPayout(o.card.annual, o.level))}</td>
+                    <td className="r num font-semibold text-emerald">{rax(o.card.fixed ? (o.card.fixed.annualCap == null ? o.card.annual * o.card.fixed.multiplier : Math.min(o.card.fixed.annualCap, o.card.annual * o.card.fixed.multiplier)) : annualPayout(o.card.annual, o.level))}</td>
                     <td className="r"><button className="btn-ghost btn-sm" onClick={() => remove(o.id)} aria-label={`Remove ${o.card.name}`}><Trash2 size={12} /></button></td>
                   </tr>
                 ))}

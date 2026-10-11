@@ -10,7 +10,7 @@
  * (cap ÷ uncapped annual) rather than tracking which claims actually landed; Feb 29 games are ignored in non-leap
  * windows; prices come from a caller-supplied function and are estimates.
  */
-import type { OtdCardRecord, OtdSport } from './otdSnapshot';
+import { gameYear, type OtdCardRecord, type OtdSport } from './otdSnapshot';
 
 export interface WindowSpec {
   /** First day of the window (UTC date). */
@@ -30,6 +30,13 @@ export interface EfficiencyParams {
   annualCap: number | null;
   /** Per-card override of multiplier/cap (e.g. "best rung per card"). When set, `multiplier`/`annualCap` are ignored. */
   /**
+   * Repeat the window this many times (5- and 10-year views): earnings and costs are for `years` consecutive repeats of
+   * the one-year window — anniversaries recur every year. Assumes today's rules and levels persist.
+   */
+  years?: number;
+  /** With years > 1: treat a card's cap as a LIFETIME total (cap ÷ years per year) instead of resetting each year. */
+  capLifetime?: boolean;
+  /**
    * Extra claims per day across ALL sports (Pro's bonus claim — Real grants it only if you win its poll, so this is the
    * best case). Each day it takes the best payout the per-sport limit left unclaimed. 0 = none.
    */
@@ -48,9 +55,11 @@ export interface EfficiencyParams {
 const DAY_MS = 86_400_000;
 
 /** Payout per General-level rax for this card: multiplier × cap scale. */
-export function payoutScale(card: OtdCardRecord, p: Pick<EfficiencyParams, 'multiplier' | 'annualCap' | 'levelOf'>): number {
+export function payoutScale(card: OtdCardRecord, p: Pick<EfficiencyParams, 'multiplier' | 'annualCap' | 'levelOf' | 'years' | 'capLifetime'>): number {
   const l = p.levelOf ? p.levelOf(card) : { multiplier: p.multiplier, annualCap: p.annualCap };
-  return l.multiplier * capFactor(card, l.multiplier, l.annualCap);
+  const yrs = Math.max(1, p.years ?? 1);
+  const cap = l.annualCap != null && p.capLifetime && yrs > 1 ? l.annualCap / yrs : l.annualCap;
+  return l.multiplier * capFactor(card, l.multiplier, cap);
 }
 
 /**
@@ -71,6 +80,26 @@ export function windowKeys(w: WindowSpec): number[] {
   }
   return out;
 }
+
+/** mmdd → the calendar year that day falls in, for each day of the window. */
+export function windowYears(w: WindowSpec): Map<number, number> {
+  const m = new Map<number, number>();
+  const n = Math.max(1, Math.min(366, Math.floor(w.days)));
+  const t0 = Date.UTC(w.start.getUTCFullYear(), w.start.getUTCMonth(), w.start.getUTCDate());
+  for (let i = 0; i < n; i++) {
+    const d = new Date(t0 + i * DAY_MS);
+    const k = (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+    if (m.has(k)) break;
+    m.set(k, d.getUTCFullYear());
+  }
+  return m;
+}
+
+/**
+ * OTD pays on the anniversary of a PAST game: a game played on 2026-10-03 first pays on 2027-10-03. True when the card's
+ * game on `mmddValue` was played in a year before the calendar year this day falls in.
+ */
+export const isPayable = (card: OtdCardRecord, mmddValue: number, calendarYear: number): boolean => gameYear(card.sport, card.season, mmddValue) < calendarYear;
 
 /** Cap as a uniform scale on a card's payouts: min(1, cap / uncappedAnnual). */
 export function capFactor(card: OtdCardRecord, multiplier: number, annualCap: number | null): number {
@@ -96,7 +125,8 @@ export interface CardRow {
 }
 
 export function rankCards(cards: OtdCardRecord[], p: EfficiencyParams): CardRow[] {
-  const keys = new Set(windowKeys(p.window));
+  const yearOf = windowYears(p.window);
+  const yrs = Math.max(1, p.years ?? 1);
   const rows: CardRow[] = [];
   for (const card of cards) {
     if (!p.sports.has(card.sport)) continue;
@@ -107,9 +137,12 @@ export function rankCards(cards: OtdCardRecord[], p: EfficiencyParams): CardRow[
     let a = 0;
     for (const [d, rax] of card.days) {
       a += rax;
-      if (keys.has(d)) {
-        w += rax;
-        wg++;
+      const y = yearOf.get(d);
+      if (y !== undefined) {
+        // first year: only games from earlier years pay; every later repeat of the window pays them all
+        const now = isPayable(card, d, y);
+        w += (now ? rax : 0) + (yrs - 1) * rax;
+        if (now) wg++;
       }
     }
     // `days` is truncated to games ≥ minDayRax, so take the card's true annual when it's larger.
@@ -281,7 +314,8 @@ interface Prepared {
 }
 
 function prepare(rows: CardRow[], p: EfficiencyParams): Prepared[] {
-  const keys = new Set(windowKeys(p.window));
+  const yearOf = windowYears(p.window);
+  const yrs = Math.max(1, p.years ?? 1);
   const poolIdx = new Map<string, number>();
   return rows.map((row) => {
     const scale = payoutScale(row.card, p);
@@ -289,7 +323,12 @@ function prepare(rows: CardRow[], p: EfficiencyParams): Prepared[] {
     if (!poolIdx.has(pool)) poolIdx.set(pool, poolIdx.size + 1);
     const base = poolIdx.get(pool)! * 10_000;
     const hits: Array<[number, number]> = [];
-    for (const [d, rax] of row.card.days) if (keys.has(d)) hits.push([base + d, rax * scale]);
+    for (const [d, rax] of row.card.days) {
+      const y = yearOf.get(d);
+      if (y === undefined) continue;
+      const times = (isPayable(row.card, d, y) ? 1 : 0) + (yrs - 1);
+      if (times > 0) hits.push([base + d, rax * scale * times]);
+    }
     return { row, hits, price: row.price, net: row.price * p.sunkFraction };
   });
 }
@@ -497,11 +536,11 @@ export function buildPortfolio(cards: OtdCardRecord[], p: EfficiencyParams, o: P
   const calendar = buildCalendar(picks.map((x) => x.row.card), p);
   return {
     picks,
-    totalEarn: calendar.reduce((s, c) => s + c.claimed, 0),
+    totalEarn: calendar.reduce((s, c) => s + c.claimed, 0) * Math.max(1, p.years ?? 1),
     totalPrice: cumPrice,
     totalNetCost: cumNet,
     calendar,
-    wasted: calendar.reduce((s, c) => s + c.wasted, 0),
+    wasted: calendar.reduce((s, c) => s + c.wasted, 0) * Math.max(1, p.years ?? 1),
     emptySlots: calendar.reduce((s, c) => s + c.emptySlots, 0),
     stoppedBecause,
     objective,
@@ -515,12 +554,13 @@ export function buildCalendar(cards: OtdCardRecord[], p: EfficiencyParams): DayC
   const keys = windowKeys(p.window);
   const pools = p.scope === 'global' ? ['ALL'] : [...p.sports];
   const by = new Map<string, Array<{ cardId: string; value: number }>>();
-  const keySet = new Set(keys);
+  const yearOf = windowYears(p.window);
   for (const c of cards) {
     const scale = payoutScale(c, p);
     const pool = poolOf(p, c.sport);
     for (const [d, rax] of c.days) {
-      if (!keySet.has(d)) continue;
+      const y = yearOf.get(d);
+      if (y === undefined || !isPayable(c, d, y)) continue;
       const k = `${pool}|${d}`;
       (by.get(k) ?? by.set(k, []).get(k)!).push({ cardId: c.id, value: rax * scale });
     }
@@ -567,6 +607,7 @@ export interface SportCeiling {
 /** What each sport could possibly pay in the window — shows which sports are "coming up" vs. quiet. */
 export function sportCeilings(cards: OtdCardRecord[], p: EfficiencyParams): SportCeiling[] {
   const keys = windowKeys(p.window);
+  const yearOf = windowYears(p.window);
   const idx = new Map<number, number[]>();
   keys.forEach((k, i) => (idx.get(k) ?? idx.set(k, []).get(k)!).push(i));
   const out: SportCeiling[] = [];
@@ -576,7 +617,7 @@ export function sportCeilings(cards: OtdCardRecord[], p: EfficiencyParams): Spor
       if (c.sport !== sport) continue;
       const scale = payoutScale(c, p);
       for (const [d, rax] of c.days) {
-        if (!idx.has(d)) continue;
+        if (!idx.has(d) || !isPayable(c, d, yearOf.get(d)!)) continue;
         const a = slot.get(d) ?? [];
         a.push(rax * scale);
         a.sort((x, y) => y - x);

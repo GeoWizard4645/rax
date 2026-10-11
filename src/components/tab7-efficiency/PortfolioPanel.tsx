@@ -19,7 +19,7 @@ export default function PortfolioPanel({
   const pf = useMemo(() => buildPortfolio(cards, params, options), [cards, params, options]);
   const ceilings = useMemo(() => sportCeilings(cards, params), [cards, params]);
   const keys = useMemo(() => windowKeys(params.window), [params.window]);
-  const ceilingTotal = ceilings.reduce((s, c) => s + c.total, 0);
+  const ceilingTotal = ceilings.reduce((s, c) => s + c.total, 0) * Math.max(1, params.years ?? 1);
   const bonus = useMemo(() => (proWin > 0 ? proBonusValue(pf.picks.map((p) => p.row.card), params, proWin) : null), [pf, params, proWin]);
   const roi = pf.totalNetCost > 0 ? pf.totalEarn / pf.totalNetCost : 0;
 

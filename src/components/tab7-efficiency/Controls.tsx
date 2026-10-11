@@ -1,10 +1,10 @@
 import { RARITY_LADDER, multiplierFor } from '../../../shared/otdRules';
 import { OTD_SPORTS, type OtdSport } from '../../../shared/otdSnapshot';
 import { DEFAULT_PRICE_PARAMS } from '../../../shared/otdPricing';
-import { DEFAULT_STATE, RUNG_KEYS, windowDays, type EffState, type WindowPreset } from './model';
+import { DEFAULT_STATE, RUNG_KEYS, windowDays, windowYears, type EffState, type WindowPreset } from './model';
 
 const PRESETS: Array<{ v: WindowPreset; l: string }> = [
-  { v: '7', l: '1 week' }, { v: '30', l: '1 month' }, { v: '90', l: '3 months' }, { v: '180', l: '6 months' }, { v: '365', l: '1 year' }, { v: 'custom', l: 'Custom' },
+  { v: '7', l: '1 week' }, { v: '30', l: '1 month' }, { v: '90', l: '3 months' }, { v: '180', l: '6 months' }, { v: '365', l: '1 year' }, { v: '5y', l: '5 years' }, { v: '10y', l: '10 years' }, { v: 'custom', l: 'Custom' },
 ];
 
 const num = (v: string, min = 0) => Math.max(min, +v.replace(/[^\d.]/g, '') || 0);
@@ -34,7 +34,13 @@ export default function Controls({ s, set, available }: { s: EffState; set: (p: 
             <input className="field num !w-auto" type="date" value={s.start} onChange={(e) => set({ start: e.target.value })} />
             <button className="btn-ghost btn-sm" onClick={() => set({ start: '' })}>today</button>
           </label>
-          <p className="hint">{windowDays(s)} days. Shorter windows only count anniversaries that fall inside them, so sports that are in-season later score lower now.</p>
+          {windowYears(s) > 1 && (
+            <div className="seg" role="group" aria-label="Cap period">
+              <button aria-pressed={!s.capLifetime} onClick={() => set({ capLifetime: false })} title="Each card's cap resets every year (working assumption)">Cap resets yearly</button>
+              <button aria-pressed={s.capLifetime} onClick={() => set({ capLifetime: true })} title="A card can only ever earn its cap in total">Cap is lifetime</button>
+            </div>
+          )}
+          <p className="hint">{windowYears(s) > 1 ? `${windowYears(s)} years: one year of anniversaries repeated ${windowYears(s)}×, assuming today's rules and card levels stay the same (they won't exactly — Real changes them) and you claim every day. Uncapped Iconic cards scale fully; capped rarities depend on whether the cap resets yearly or is a lifetime total — Real's docs don't say, so both are offered.` : `${windowDays(s)} days. Shorter windows only count anniversaries that fall inside them, so sports that are in-season later score lower now.`}</p>
         </div>
 
         <div className="space-y-2">
