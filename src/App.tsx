@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 import Header from './components/layout/Header';
 import Footer from './components/layout/Footer';
 import TabNav from './components/layout/TabNav';
@@ -19,6 +20,7 @@ const CalendarTab = lazy(() => import('./components/tab8-calendar/CalendarTab'))
 const EdgeTab = lazy(() => import('./components/tab9-edge/EdgeTab'));
 
 export default function App() {
+  const { pathname } = useLocation();
   return (
     <ToastProvider>
       <div className="flex min-h-screen flex-col">
@@ -26,6 +28,8 @@ export default function App() {
         <TabNav />
         <LimitationsBanner />
         <main className="mx-auto w-full max-w-[1500px] flex-1 px-3 py-4 sm:px-4">
+          {/* keyed by route: a crash in one tab leaves the header/nav usable and clears when you navigate */}
+          <ErrorBoundary key={pathname}>
           <Suspense fallback={<Loading label="Loading tab…" />}>
             <Routes>
               <Route path="/" element={<Navigate to="/rateboard" replace />} />
@@ -41,6 +45,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/rateboard" replace />} />
             </Routes>
           </Suspense>
+          </ErrorBoundary>
         </main>
         <Footer />
       </div>

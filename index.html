@@ -14,5 +14,29 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Boot watchdog: if the app's script fails to load/run (stale or poisoned cached file after a deploy) the page would stay blank.
+      (function () {
+        var KEY = 'rax_recover_at';
+        function heal() {
+          try {
+            var last = Number(sessionStorage.getItem(KEY) || 0);
+            if (Date.now() - last < 60000) return false;
+            sessionStorage.setItem(KEY, String(Date.now()));
+          } catch (e) {}
+          var urls = [location.href];
+          document.querySelectorAll('script[src], link[rel="stylesheet"][href]').forEach(function (el) { urls.push(el.src || el.href); });
+          Promise.all(urls.map(function (u) { return fetch(u, { cache: 'reload' }).catch(function () {}); })).then(function () { location.reload(); });
+          return true;
+        }
+        window.addEventListener('error', function (e) { if (e.target && e.target.tagName === 'SCRIPT') heal(); }, true);
+        setTimeout(function () {
+          var r = document.getElementById('root');
+          if (!r || r.childElementCount) return;
+          if (heal()) return;
+          r.innerHTML = '<div style="max-width:30rem;margin:6rem auto;padding:0 1rem;font:14px/1.5 system-ui,sans-serif;color:#cbd5e1"><b style="color:#fff">RAX didn\u2019t load.</b><p>This is usually an out-of-date cached file. <a href="" style="color:#34d399" onclick="location.reload();return false">Reload</a> \u2014 or hard-reload with Cmd/Ctrl+Shift+R.</p></div>';
+        }, 10000);
+      })();
+    </script>
   </body>
 </html>
