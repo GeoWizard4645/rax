@@ -66,8 +66,9 @@ jobs:
               # Fast path: POST straight to the site (stored in D1, read by /api/odds/events). raw.githubusercontent.com caches 5 min.
               if [ -n "$KALSHI_PUSH_SECRET" ]; then
                 for f in $(find "$OUT/kalshi" -name '*.json' -newer "$MARK"); do
-                  curl -sS -f --max-time 20 --retry 2 -X POST -H "Authorization: Bearer $KALSHI_PUSH_SECRET" -H 'Content-Type: application/json' \
-                    --data-binary @"$f" "$PUSH_URL?sport=$(basename "$f" .json)" -o /dev/null || echo "site push failed for $f"
+                  CODE=$(curl -sS --max-time 20 --retry 2 -X POST -H "Authorization: Bearer $KALSHI_PUSH_SECRET" -H 'Content-Type: application/json' \
+                    --data-binary @"$f" "$PUSH_URL?sport=$(basename "$f" .json)" -o "$RUNNER_TEMP/push.out" -w '%{http_code}') || CODE=curl-failed
+                  [ "$CODE" = 200 ] || echo "site push $(basename "$f"): HTTP $CODE $(head -c 200 "$RUNNER_TEMP/push.out" 2>/dev/null)"
                 done
               fi
               mv "$RUNNER_TEMP/mark.new" "$MARK"

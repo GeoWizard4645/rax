@@ -26,7 +26,7 @@ describe('POST /api/odds/kalshi-push', () => {
     const { db, writes } = fakeDb();
     expect((await call({ ODDS_DB: db, KALSHI_PUSH_SECRET: 's3cret' }, {})).status).toBe(401);
     expect((await call({ ODDS_DB: db, KALSHI_PUSH_SECRET: 's3cret' }, { auth: 'Bearer nope' })).status).toBe(401);
-    expect((await call({ ODDS_DB: db }, { auth: 'Bearer ' })).status).toBe(401);
+    expect((await call({ ODDS_DB: db }, { auth: 'Bearer x' })).status).toBe(503); // server secret not configured
     expect((await call({ ODDS_DB: db, KALSHI_PUSH_SECRET: 's3cret' }, { method: 'GET', auth: 'Bearer s3cret' })).status).toBe(405);
     expect(writes).toHaveLength(0);
   });

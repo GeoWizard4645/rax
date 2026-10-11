@@ -22,8 +22,9 @@ function safeEqual(a: string, b: string): boolean {
 export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (request.method !== 'POST') return err(405, 'method_not_allowed', 'POST only.');
   const secret = env.KALSHI_PUSH_SECRET;
+  if (!secret) return err(503, 'not_configured', 'KALSHI_PUSH_SECRET is not set on this deployment (set it as a Pages secret, then redeploy).');
   const given = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-  if (!secret || !given || !safeEqual(given, secret)) return err(401, 'unauthorized', 'Missing or wrong push secret.');
+  if (!given || !safeEqual(given, secret)) return err(401, 'unauthorized', 'Missing or wrong push secret.');
   if (!env.ODDS_DB) return err(503, 'no_db', 'ODDS_DB (D1) is not bound.');
   const sport = (new URL(request.url).searchParams.get('sport') ?? '').toUpperCase();
   if (!ODDS_SPORTS.includes(sport as never)) return err(400, 'bad_sport', `sport must be one of ${ODDS_SPORTS.join(', ')}.`);
