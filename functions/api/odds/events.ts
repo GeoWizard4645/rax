@@ -118,7 +118,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
     const nowMs = Date.now();
     const nowIso = new Date(nowMs).toISOString();
     const { jobs, trimmed } = planFanout(sport, nowMs, undefined, lite);
-    RETRY_BUDGET.left = Math.max(0, 50 - jobs.length - 1); // stay ≤ 50 subrequests even with 429 retries
+    RETRY_BUDGET.left = Math.max(0, 50 - jobs.length - 2); // stay ≤ 50 subrequests even with 429 retries, keeping one for the Kalshi snapshot fallback
     const settled = await runJobs(jobs);
 
     const status = new Map<OddsSource, { ok: number; fail: number; err?: string }>();
