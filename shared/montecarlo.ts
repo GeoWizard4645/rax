@@ -241,8 +241,8 @@ function bandsAndStats(data: Float64Array, N: number, H: number, now: number, st
 /** Run the simulation. `now` is the start time (ms). */
 export function simulate(inp: ForecastInputs, sc: Scenario, now: number): Forecast {
   const params = estimateParams(inp, sc);
-  // FC (soccer) has no season calendar in season.ts: treat it as year-round rather than invent dates.
-  return simulateWith(params, inp.sport === 'FC' ? 'UFC' : inp.sport, inp.key, sc, now, inp.currentPpr);
+  // FC (soccer) has no season calendar in season.ts, and a pooled series (sport 'ALL', real sales that carry no sport) has no single sport: treat both as year-round rather than invent dates.
+  return simulateWith(params, inp.sport === 'FC' || inp.sport === 'ALL' ? 'UFC' : inp.sport, inp.key, sc, now, inp.currentPpr);
 }
 
 export function simulateWith(p: ModelParams, sport: Sport, key: string, sc: Scenario, now: number, currentPpr: number): Forecast {

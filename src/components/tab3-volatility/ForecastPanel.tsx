@@ -10,7 +10,7 @@ import { ErrorBlock, Loading } from '../ui/StateBlock';
 import { Segmented } from '../ui/Segmented';
 import type { SourceId } from '../ui/SourceSelect';
 import { MIN_FORECAST_DAYS } from '../../../shared/rbHistory';
-import HistoryProgress from './HistoryProgress';
+import HistoryProgress, { GrowingHistoryProgress } from './HistoryProgress';
 
 type Metric = 'ppr' | 'price' | 'rating';
 const HORIZONS = [7, 14, 30, 60, 90] as const;
@@ -25,8 +25,11 @@ const PHASE_LABEL: Record<string, string> = {
  */
 export default function ForecastPanel({ playerKey, name, source }: { playerKey: string; name: string; source: SourceId }) {
   const rate = source === 'rateboard';
+  const real = source === 'real';
+  const pooled = real && playerKey.startsWith('pool:'); // pooled series are per-rating only (rating is fixed at 1)
   const { data: inp, error, loading, reload } = useForecastInputs(playerKey, source);
-  const [metric, setMetric] = useState<Metric>('ppr');
+  const [metricPick, setMetric] = useState<Metric>('ppr');
+  const metric: Metric = pooled ? 'ppr' : metricPick;
   const [horizon, setHorizon] = useState<(typeof HORIZONS)[number]>(30);
   const [autoHype, setAutoHype] = useState(true);
   const [hype, setHype] = useState(40);
@@ -45,7 +48,7 @@ export default function ForecastPanel({ playerKey, name, source }: { playerKey: 
   // `now` is pinned per input load so slider changes re-run the same market snapshot, not a moving clock.
   const now = useMemo(() => Date.now(), [inp]); // eslint-disable-line react-hooks/exhaustive-deps
   // Bid-rate history must be long enough to simulate from; until then we explain instead of drawing a fan.
-  const gated = rate && !!inp && (!inp.coverage?.ready || inp.daily.length < MIN_FORECAST_DAYS);
+  const gated = (rate && !!inp && (!inp.coverage?.ready || inp.daily.length < MIN_FORECAST_DAYS)) || (real && !!inp && inp.daily.length < MIN_FORECAST_DAYS);
   const fc = useMemo(() => (inp && !gated ? simulate(inp, scenario, now) : null), [inp, gated, scenario, now]);
 
   const chart = useMemo(() => {
@@ -62,10 +65,14 @@ export default function ForecastPanel({ playerKey, name, source }: { playerKey: 
   if (inp && gated)
     return (
       <div className="panel space-y-3 p-3">
-        <h2 className="text-sm font-semibold">{name} — bid-rate projection</h2>
-        {inp.coverage && <HistoryProgress coverage={inp.coverage} what="Monte Carlo projections" />}
+        <h2 className="text-sm font-semibold">{name} — {real ? 'price projection' : 'bid-rate projection'}</h2>
+        {real ? <GrowingHistoryProgress days={inp.daily.length} need={MIN_FORECAST_DAYS} what="Monte Carlo projection" subject={name} /> : inp.coverage && <HistoryProgress coverage={inp.coverage} what="Monte Carlo projections" />}
         <p className="text-xs text-muted">
-          This player has {inp.daily.length} day{inp.daily.length === 1 ? '' : 's'} of recorded bid-rate history; the projection needs at least {MIN_FORECAST_DAYS}. Today’s best bid rate is <span className="num text-head">{dec(inp.currentPpr, 1)}/1</span>.
+          {real ? (
+            <>This {pooled ? 'pool' : 'card'} has sales on {inp.daily.length} distinct day{inp.daily.length === 1 ? '' : 's'} in what you captured; the projection needs at least {MIN_FORECAST_DAYS}. Its latest daily median is <span className="num text-head">{dec(inp.currentPpr, 1)}</span> Rax per rating point.</>
+          ) : (
+            <>This player has {inp.daily.length} day{inp.daily.length === 1 ? '' : 's'} of recorded bid-rate history; the projection needs at least {MIN_FORECAST_DAYS}. Today’s best bid rate is <span className="num text-head">{dec(inp.currentPpr, 1)}/1</span>.</>
+          )}
         </p>
       </div>
     );
@@ -87,7 +94,7 @@ export default function ForecastPanel({ playerKey, name, source }: { playerKey: 
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <DataBadge source={inp.source} />
-          {rate ? <span className="chip-muted" title="Rateboard offers carry no card rating or price, so only the bid rate itself is projected">Rax per rating point (bid rate)</span> : <Segmented value={metric} onChange={setMetric} label="Metric" options={[{ value: 'ppr', label: 'Per rating' }, { value: 'price', label: 'Card price' }, { value: 'rating', label: 'Rating' }]} />}
+          {rate ? <span className="chip-muted" title="Rateboard offers carry no card rating or price, so only the bid rate itself is projected">Rax per rating point (bid rate)</span> : pooled ? <span className="chip-muted" title="A pool mixes cards of different ratings, so only the price per rating point is projected">Rax per rating point (sale prices)</span> : <Segmented value={metric} onChange={setMetric} label="Metric" options={[{ value: 'ppr', label: 'Per rating' }, { value: 'price', label: 'Card price' }, { value: 'rating', label: 'Rating' }]} />}
         </div>
       </div>
 

@@ -48,7 +48,7 @@ export const PARAM_CATALOG: Record<TabId, ParamMeta[]> = {
     { name: 'discount', type: 'number', min: -30, max: 70, description: 'asking price vs their bid, in % (−30 = 30% over, 70 = 70% off)' },
   ],
   volatility: [
-    { name: 'source', type: 'enum', values: ['rateboard', 'imported', 'sample'], description: 'data: rateboard = real recorded Rateboard offers, imported = your own pasted snapshot, sample = synthetic demo' },
+    { name: 'source', type: 'enum', values: ['real', 'rateboard', 'imported', 'sample'], description: 'data: real = auctions, sales and market stats the user captured from their own Real session (default when captured), rateboard = real recorded Rateboard offers, imported = your own pasted snapshot, sample = synthetic demo' },
     { name: 'sport', type: 'enum', values: ['ALL', ...SPORTS, 'FC'], description: 'filter by sport (Rateboard source: NFL, CFB, FC, NHL, UFC only)' },
     { name: 'player', type: 'string', description: 'select a player/card by (part of) name' },
   ],

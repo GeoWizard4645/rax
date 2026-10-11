@@ -16,6 +16,9 @@ import { ErrorBlock, Loading, Spinner } from '../ui/StateBlock';
 import { Segmented } from '../ui/Segmented';
 import { Stat } from '../ui/Stat';
 import { rax } from '../../lib/format';
+import RealCaptureImport from '../RealCaptureImport';
+import { useRealMarket } from '../../lib/realMarketStore';
+import RealAuctions from './RealAuctions';
 import ContenderBoard from './ContenderBoard';
 import DiscountSlider from './DiscountSlider';
 import OverpricedRadar, { toRadarRows } from './OverpricedRadar';
@@ -32,12 +35,15 @@ export default function ScoutTab() {
   const rb = useRbBoard();
   const hist = useRateHistory();
   const baselines = hist.data?.baselines ?? NO_BASELINES;
+  const real = useRealMarket();
   const [chosen, setChosen] = useState<SourceId | null>(null);
   const bidStats = useBidStats(rb.board, baselines);
-  // Default: the best REAL source that has data — Rateboard's live board; else an import; else sample.
+  // Default: the best REAL source that has data — auctions you captured from Real itself; else Rateboard's live board; else an import; else sample.
   const rbHasData = !!rb.board && rb.board.offers.length > 0;
-  const source: SourceId = chosen ?? (rb.loading ? 'rateboard' : rbHasData ? 'rateboard' : snap ? 'imported' : 'sample');
+  const pick = chosen === 'real' && !real.hasData ? null : chosen; // the capture was cleared while "Real" was selected
+  const source: SourceId = pick ?? (real.hasAuctions ? 'real' : rb.loading ? 'rateboard' : rbHasData ? 'rateboard' : snap ? 'imported' : 'sample');
   const rate = source === 'rateboard';
+  const isReal = source === 'real';
   const data = source === 'imported' ? imported : source === 'sample' ? api.data : null;
   const { error, loading, reload } = source === 'imported' ? { error: null, loading: false, reload: () => {} } : source === 'sample' ? api : { error: null, loading: false, reload: () => {} };
   const col = useCollections();
@@ -58,16 +64,29 @@ export default function ScoutTab() {
   };
 
   const stats = useMemo(() => {
+    if (isReal) {
+      const live = real.radar.filter((i) => i.status.state === 'live');
+      return { active: live.length, hot: live.filter((i) => (i.premium ?? -1) >= 40).length, top: live.reduce((m, i) => Math.max(m, i.premium ?? 0), 0), contenders: 0 };
+    }
     if (!data || rate) return null;
     const rows = toRadarRows(data.bids, data.baselines);
     const hot = rows.filter((r) => r.premium >= 40 && r.status === 'active');
     return { active: data.bids.filter((b) => b.status === 'active').length, hot: hot.length, top: rows.reduce((m, r) => Math.max(m, r.premium), 0), contenders: data.contenders.length };
-  }, [data]);
+  }, [data, isReal, real.radar]);
 
   const matches = useMemo(() => (data ? matchBids(data.bids, col.collections).length : 0), [data, col.collections]);
-  useScoutSurface({ username: input, setUsername: setInput, view, setView, discount, setDiscount, stats, source: data?.source, imported: !!imported, matches, pulling: col.pulling ? String(col.pulling) : null, collectionsLoaded: Object.keys(col.collections), submit, reload });
+  useScoutSurface({ username: input, setUsername: setInput, view, setView, discount, setDiscount, stats, source: isReal ? 'real' : rate ? 'rateboard' : data?.source, imported: !!imported, matches, pulling: col.pulling ? String(col.pulling) : null, collectionsLoaded: Object.keys(col.collections), submit, reload });
 
   const options: SourceOption[] = [
+    {
+      value: 'real',
+      label: 'Real marketplace · captured',
+      available: real.hasData,
+      status: real.hasData ? `${real.coverage.liveAuctions} live` : undefined,
+      hint: real.hasData
+        ? `REAL data you recorded from your own signed-in Real session: ${real.coverage.auctions} auctions (current bid, bid count, watchers, time left) with real reference prices from the sales and “Market data” you opened — ${real.summary}. ${real.label}. Bidder names are not shown on Real’s cards, so none are listed.`
+        : 'Nothing captured yet — open “Capture real Real-marketplace data” below and record the Marketplace from your own session.',
+    },
     {
       value: 'rateboard',
       label: 'Live · Rateboard bids',
@@ -94,10 +113,11 @@ export default function ScoutTab() {
           <h1 className="text-lg font-semibold">Proactive Scout &amp; Overpriced Auction Radar</h1>
           <p className="text-sm text-muted">Find bidders already willing to pay a premium — and DM them a price for the card you own.</p>
         </div>
-        <DataBadge source={rate ? 'rateboard' : data?.source} note={data?.note} />
+        <DataBadge source={isReal ? 'real' : rate ? 'rateboard' : data?.source} note={isReal ? `${real.label}. ${real.summary}.` : data?.note} />
       </div>
       <SourceSelect value={source} onChange={setChosen} options={options} />
       <SampleNotice source={data?.source} note={data?.note} />
+      <RealCaptureImport />
       {source === 'imported' && imported && snap && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-action/30 bg-action/5 px-3 py-2 text-xs text-head">
           <span>Showing <b>your imported snapshot</b> of {snap.bids.length} auctions from {new Date(snap.t).toLocaleString()}. Premiums use {Object.values(imported.baselineKinds).includes('history') ? 'your earlier imports where available, otherwise' : ''} similar cards in the same snapshot.</span>
@@ -105,8 +125,20 @@ export default function ScoutTab() {
         </div>
       )}
 
-      <Explain title={rate ? 'How this works on Rateboard data — and what it can’t tell you' : 'How this works — and what to expect'}>
-        {rate ? (
+      <Explain title={isReal ? 'How this works on data captured from your Real session — and what it can’t tell you' : rate ? 'How this works on Rateboard data — and what it can’t tell you' : 'How this works — and what to expect'}>
+        {isReal ? (
+          <>
+            <p>
+              <b className="text-head">Where the data comes from.</b> A read-only recorder you run on realapp.com, signed in as yourself, copies what Real already shows on screen: every Marketplace auction you scroll past (player, play, rarity, rating, serial, <i>current bid</i>, bid count, watchers, time left) and, for cards where you open “Market data”, Real’s own median price, price per rating, total sales and quartiles plus the individual recent sales. Nothing is requested from Real by this site and nothing leaves your browser.
+            </p>
+            <p>
+              <b className="text-head">Overpriced Radar.</b> Per-rating price = current bid ÷ rating. Each live auction is compared with a real reference per rating point — Real’s own median for the same card; else for the same player; else the median of the sales you captured for that sport + rarity + card type; else the other live bids of that kind (bids, not sales). The chip says which one and how many sales back it; with fewer than 5 the number is shown but no premium is computed.
+            </p>
+            <p className="rounded-md border border-amber/30 bg-amber/5 px-3 py-2 text-amber/90">
+              <b>What is unknown:</b> who is bidding (Real’s cards don’t show bidders — so Proactive Scout and Repeat Contenders can’t run on this source; they still work on Rateboard / Imported data), anything you didn’t scroll past or open, the true end time (the timer is shown rounded; an auction past it is marked stale), and what Real’s own “Premium ×” means (not verified, shown only in Tab 3’s table). Reference medians are windows (30 days) of Real’s own stats as of when you opened them.
+            </p>
+          </>
+        ) : rate ? (
           <>
             <p>
               <b className="text-head">Where the data comes from.</b> Rateboard’s public board lists standing <i>buy offers</i>: a buyer, a player and a rate — “I’ll pay 20 Rax per rating point.” Real’s own marketplace and auction data needs a signed-in app session and isn’t available to this site, so these offers are the real demand signal we <i>can</i> read for free, with its owner’s permission.
@@ -142,7 +174,7 @@ export default function ScoutTab() {
         )}
       </Explain>
 
-      <form
+      {!isReal && <form
         className="panel flex flex-wrap items-end gap-3 p-3"
         onSubmit={(e) => {
           e.preventDefault();
@@ -173,7 +205,11 @@ export default function ScoutTab() {
             {s}: {m}
           </span>
         ))}
-      </form>
+      </form>}
+
+      {isReal && (
+        <RealAuctions real={real} view={view} setView={setView} />
+      )}
 
       <ImportPanel onImported={(s) => { setSnap(s); setChosen('imported'); }} />
 

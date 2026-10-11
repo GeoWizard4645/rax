@@ -11,14 +11,15 @@ const TAG_STYLE: Record<string, string> = {
 };
 
 /** Cards whose 24h volume or average bid is > 2σ above their 7-day trailing baseline. */
-export default function SpikeCards({ spikes, selected, onSelect, unit = 'rax', waiting }: { spikes: SpikeRow[]; selected: string | null; onSelect: (key: string) => void; unit?: MarketUnit; waiting?: string }) {
+export default function SpikeCards({ spikes, selected, onSelect, unit = 'rax', waiting, emptyNote }: { spikes: SpikeRow[]; selected: string | null; onSelect: (key: string) => void; unit?: MarketUnit; waiting?: string; emptyNote?: string }) {
   const rate = unit === 'rate';
+  const sales = unit === 'sales';
   if (waiting) return null; // the history-progress notice above explains why
   if (!spikes.length) {
     return (
       <div className="panel">
-        <Empty title={rate ? 'No demand spikes right now' : 'No velocity spikes right now'}>
-          {rate ? 'No player’s best bid rate or buyer count is more than 2 standard deviations (and materially) above its 7-day baseline.' : 'Nothing is more than 2 standard deviations above its 7-day baseline.'}
+        <Empty title={rate ? 'No demand spikes right now' : sales ? 'No price spikes in your captured sales' : 'No velocity spikes right now'}>
+          {emptyNote ?? (rate ? 'No player’s best bid rate or buyer count is more than 2 standard deviations (and materially) above its 7-day baseline.' : 'Nothing is more than 2 standard deviations above its 7-day baseline.')}
         </Empty>
       </div>
     );
@@ -50,11 +51,11 @@ export default function SpikeCards({ spikes, selected, onSelect, unit = 'rax', w
           </div>
           <div className="num mt-2 grid grid-cols-2 gap-2 text-xs">
             <div>
-              <div className="text-muted">{rate ? 'Buyers standing (24h avg)' : '24h volume'}</div>
-              <span className={s.volumeZ > 2 ? 'text-amber' : ''}>{rate ? dec(s.volume24h, 1) : rax(s.volume24h)}</span> <span className="text-muted">vs {rate ? dec(s.volumeBaseline, 1) : `${rax(s.volumeBaseline)}/d`}</span>
+              <div className="text-muted">{rate ? 'Buyers standing (24h avg)' : sales ? 'Sales you captured (24h)' : '24h volume'}</div>
+              <span className={s.volumeZ > 2 ? 'text-amber' : ''}>{rate ? dec(s.volume24h, 1) : rax(s.volume24h)}</span> <span className="text-muted">vs {rate ? dec(s.volumeBaseline, 1) : `${sales ? dec(s.volumeBaseline, 1) : rax(s.volumeBaseline)}/d`}</span>
             </div>
             <div>
-              <div className="text-muted">{rate ? 'Best bid rate (24h avg)' : 'Avg bid 24h'}</div>
+              <div className="text-muted">{rate ? 'Best bid rate (24h avg)' : sales ? 'Median sale price (24h)' : 'Avg bid 24h'}</div>
               <span className={s.avgBidZ > 2 ? 'text-amber' : ''}>{rate ? `${dec(s.avgBid24h, 1)}/1` : rax(s.avgBid24h)}</span> <span className="text-muted">vs {rate ? `${dec(s.avgBidBaseline, 1)}/1` : rax(s.avgBidBaseline)}</span>
             </div>
           </div>

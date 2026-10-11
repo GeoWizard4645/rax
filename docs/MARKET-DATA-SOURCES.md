@@ -4,7 +4,7 @@ Survey date: 2026-10-11. Rules followed: free only, read-only, no login, no bypa
 
 ## Bottom line
 
-**No free, public, unauthenticated source of Real sale prices, auction bids, fair market value or price history exists that we could find.** Everything on Real's side is login- and signed-token-gated, and Real's Terms of Use forbid scraping. The only real market-shaped data we can read is **Rateboard's standing buy offers** (demand-side bid *rates*, Rax per rating point). Tabs 2–3 now run on those, with the history recorded going forward; imports and sample data stay selectable and labelled.
+**No free, public, unauthenticated source of Real sale prices, auction bids, fair market value or price history exists that we could find.** Everything on Real's side is login- and signed-token-gated, and Real's Terms of Use forbid scraping. The only real market-shaped data we can read is **Rateboard's standing buy offers** (demand-side bid *rates*, Rax per rating point). Tabs 2–3 now run on those, with the history recorded going forward; imports and sample data stay selectable and labelled. The one exception is data **you** record from your own signed-in Real session — see "Real marketplace capture" below — which becomes the default source once you have captured something.
 
 ## Candidates
 
@@ -60,6 +60,42 @@ Survey date: 2026-10-11. Rules followed: free only, read-only, no login, no bypa
 
 Any public JSON/HTML with card prices, auctions or FMV; any share-link metadata; any repo/package/spreadsheet/newsletter/bot dataset; any machine-readable sale log; any Reddit content; any YouTube transcript; any other Rateboard-like board. The "Real Bot" may answer price questions but only inside the app.
 
-## Real-session capture (the one place real auction data could still come from)
+## Real marketplace capture (Tabs 2–3, the default when you have captured something)
 
-See [CAPTURE-GUIDE.md](CAPTURE-GUIDE.md) — the three captures to ask the user for, so importers can use exact field names instead of guesses.
+Added 2026-10-11. This is the only route to **real** auction bids, sale prices and fair values, and it works because the data is already on *your* screen: Real's web app shows every Marketplace auction and, per card, a "Market data" view with its own median price, price per rating, total sales, quartiles and a list of recent sales.
+
+**How it works.** `shared/realMarketCapture.ts` holds a recorder snippet (also offered as a bookmarklet). You run it on realapp.com, signed in as yourself. It adds a small box, **only reads the text already on the page** every ~1.2 s while you browse, makes no requests, clicks nothing, touches no cookies/tokens/headers, and sends nothing; a unit test asserts the code contains no `fetch`/XHR/WebSocket/beacon/`.click()`/cookie access. **Export** copies JSON, which you paste into the "Capture real Real-marketplace data" box in Tab 2 or 3. Imports **accumulate** in this browser's localStorage (`src/lib/realMarketStore.ts`, key `rax_real_market_v1`); nothing is uploaded. Real's terms discourage bulk data mining, so the point is to record what you personally look at, at human speed.
+
+**What is recorded**
+
+| Part | Fields | Notes |
+|---|---|---|
+| Auctions | sport, season, rarity, card type, rating, play, player, team, serial, **current bid**, bid count, watchers, **time left**, `seenAt` | one row per auction on screen. Merged by sport\|serial\|player\|type\|rating; the latest sighting wins and every *differing* sighting is kept as its own `seenAt` point (bid history), runs of identical sightings keep only first + last, max 40 points. A card seen again after its timer ran out is counted as a relisting and its history restarts |
+| Sales | player (often abbreviated, "B. Robinson"), rating, rarity, serial, price, price per rating, timestamp, outcome filter | from a card's Market data → Recent activity. Deduped by `saleKey`. **Only `Sold` (or an unread filter) counts as a sale price**; Accepted / Open / No Sale rows are kept but excluded from every price statistic (an accepted offer becomes an auction per Real's changelog, so it is not a final price) |
+| Market stats | median, median per rating, total sales, premium ×, min, max, 25th–75th percentile, scope (Card / Player / Similar), window (30d) | Real's own numbers as displayed. Deduped by name+serial+scope+window+day |
+
+**Storage guards.** One write per import; sales are stored as compact tuples; newest **20,000** sales kept; auctions dropped 14 days after they end; summaries dropped after 90 days; the whole store is shrunk to ~3.5M characters (stale auctions first, then oldest sales) and, if the browser still refuses (quota), retried smaller. The import message says exactly what was dropped.
+
+**Reference prices for the overpriced radar (Tab 2)** — per rating point, first one resting on **≥ 5 sales** wins; if none does, the best one is shown but **no premium is computed**:
+1. Real's own median per rating for the same card (stats, scope Card; matched by name + rating + rarity, the serial the view was opened on is ignored because the stat covers all copies);
+2. the same for the same player (scope Player);
+3. median of captured sales of the same sport + rarity + card type (sales carry no sport or type, so they are resolved through the auctions you captured: initial + surname + rating + rarity must identify exactly one sport/type, otherwise the sale is left out);
+4. median bid per rating of the other live auctions of that sport + rarity + type (**bids, not sales**);
+5. last resort, flagged weak: median of all captured sales of that rarity.
+Premium = (bid ÷ rating) ÷ reference − 1. Example from the real fixture: Bijan Robinson 2.6 Common #1353, current bid 110 → 42.3 per rating against Real's own 31 (529 sales, 30 d) = **+36.5%**.
+
+**Tab 3 on this source.** Daily median price per rating and sales count (UTC days, gaps stay gaps) per card and pooled by rarity / sport+rarity / sport+rarity+type; candles from the individual sales; Real's stats as a fair-value table with its age; price-spike screener (24 h median sale price vs the seven earlier 24 h windows, needs ≥ 3 recent sales, ≥ 3 earlier windows with ≥ 2 sales each, ≥ 10 in all, z > 2 and ≥ +15%); bid-vs-fair scatter (live auctions × references with ≥ 5 sales); Monte Carlo only with sales on **≥ 5 distinct days** for that series (otherwise it says how many days exist). Windows end at the newest captured sale, not at "now". Volume is deliberately never tested for spikes (see below).
+
+**Limits — read these**
+- **Bidders are unknown.** Cards on the Marketplace don't show who is bidding, so nothing is invented: Proactive Scout and Repeat Contenders cannot run on this source (they still work on Rateboard / Imported).
+- **Only what you opened.** Auctions you scrolled past, cards whose Market data you opened. The recent-activity list is the latest N sales, so captured sales per day measure how long that list was, not market volume.
+- **Price-history chart values are not in the page text** (they are drawn graphics), so history is built from individual sales and market-data snapshots and only grows as you capture on more days.
+- **"Premium ×" is Real's own number and its meaning is unverified** (it may be a serial-number premium). It is displayed in the fair-value table and used in no calculation. Our premium is our own formula above.
+- Time left is shown rounded to one unit ("4h", "5d"); an auction past `seenAt + timeLeft` is "timer ran out" for one more unit and "ended · stale" after that. Whether late bids extend an auction is unknown.
+- Player matching between abbreviated sale names and full names uses initial + surname; two players sharing both would be conflated.
+- Per-card/player stats are 30-day windows as of when you opened them; their age is shown.
+- Mixed-rating pools use price ÷ rating, which is not constant across ratings; the weak rarity-wide reference is a rough yardstick.
+
+## Older fallback: copy responses from DevTools
+
+See [CAPTURE-GUIDE.md](CAPTURE-GUIDE.md) — the manual copy-paste-from-DevTools flow and the three response captures to ask the user for, if the recorder ever stops working after a Real redesign.

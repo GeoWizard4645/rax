@@ -1,4 +1,4 @@
-import { ClipboardPaste, FlaskConical, Radio } from 'lucide-react';
+import { ClipboardPaste, Database, FlaskConical, Radio } from 'lucide-react';
 import type { DataSource } from '../../types/market';
 
 /** Every panel that can show synthetic data carries one of these, so SAMPLE is never mistaken for LIVE. */
@@ -8,6 +8,13 @@ export function DataBadge({ source, note }: { source: DataSource | null | undefi
     return (
       <span className="chip-emerald" title={note || 'Live from Rateboard’s public board: standing buy offers (Rax per rating point). Not Real sale prices.'}>
         <Radio size={11} /> LIVE · RATEBOARD BIDS
+      </span>
+    );
+  }
+  if (source === 'real') {
+    return (
+      <span className="chip-emerald" title={note || 'Auctions, sales and market stats you recorded from your own Real session'}>
+        <Database size={11} /> REAL MARKETPLACE · CAPTURED
       </span>
     );
   }

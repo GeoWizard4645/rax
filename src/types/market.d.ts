@@ -7,15 +7,16 @@ import type { Rarity, Sport } from './real';
  *  - 'live'      a real Real-side feed (only when an authorised upstream is configured)
  *  - 'rateboard' Rateboard's public offer board: standing BUY offers expressed as a rate per rating point (not sale prices)
  *  - 'imported'  a snapshot the user copied from their own Real session
+ *  - 'real'      auctions, sales and market stats the user recorded from their own signed-in Real web session (shared/realMarket.ts)
  *  - 'sample'    synthetic demo data
  */
-export type DataSource = 'live' | 'sample' | 'imported' | 'rateboard';
+export type DataSource = 'live' | 'sample' | 'imported' | 'rateboard' | 'real';
 
-/** Sports that can appear in market data: Real's sports plus FC (soccer), which Rateboard lists but the card feeds don't. */
-export type MarketSport = Sport | 'FC';
+/** Sports that can appear in market data: Real's sports plus FC (soccer), which Rateboard lists but the card feeds don't; 'ALL' marks a pooled series whose sport is not known (captured Real sales don't carry one). */
+export type MarketSport = Sport | 'FC' | 'ALL';
 
-/** What the numbers in a series/response mean: Rax prices (auction bids) or Rateboard bid rates (Rax per rating point). */
-export type MarketUnit = 'rax' | 'rate';
+/** What the numbers in a series/response mean: Rax prices (auction bids), Rateboard bid rates (Rax per rating point), or real SALE prices captured from the user's own Real session. */
+export type MarketUnit = 'rax' | 'rate' | 'sales';
 
 /** How much history the Rateboard-derived recorder has — shown wherever those numbers are. */
 export interface RateCoverage {
@@ -173,6 +174,8 @@ export interface SpikesResponse {
   xAxis?: 'rating' | 'buyers';
   /** Present for Rateboard-derived data. */
   coverage?: RateCoverage;
+  /** Present for the Real marketplace source: what the price-spike screener could test. */
+  real?: { asOf: number; eligible: number; tested: number; reason: string };
 }
 
 export interface CandlesResponse {
@@ -185,6 +188,8 @@ export interface CandlesResponse {
   current?: { best: number; median: number; buyers: number; offers: number; house: number; floor?: number | null } | null;
   key: string;
   window: '24h' | '7d' | '30d';
+  /** Real marketplace source: the windows end at the newest captured sale (ms), not at "now". */
+  asOf?: number;
   candles: Array<{ t: number; open: number; high: number; low: number; close: number; volume: number }>;
 }
 

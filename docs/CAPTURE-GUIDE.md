@@ -1,5 +1,13 @@
 # Capturing real data from your own Real session
 
+## Start here: the recorder (Tabs 2–3)
+
+The easy, supported way is the read-only **recorder** — no DevTools, no copying response bodies. In Tab 2 or Tab 3 open **"Capture real Real-marketplace data from your own session"**, drag the bookmarklet to your bookmarks bar (or paste the shown code in the browser console), open realapp.com signed in, go to the Marketplace and click it. Scroll the auctions you care about and open **Market data** on a few cards (Card / Player / Similar views); press **Export** in its box, paste into the box on the site, **Import**. Captures accumulate in your browser, so history grows each time you do it. It only reads the text already on your screen, makes no requests, clicks nothing and sends nothing; what it records, what it can't and its limits are in [MARKET-DATA-SOURCES.md](MARKET-DATA-SOURCES.md#real-marketplace-capture-tabs-23-the-default-when-you-have-captured-something). Real's terms discourage bulk data mining — record what you personally look at.
+
+Everything below is the **older manual fallback** (copying response bodies from DevTools), kept in case the recorder breaks after a Real redesign, and for the other tabs' endpoints.
+
+---
+
 This is the legitimate version of "sniff the app's traffic". You look at **responses to requests your own logged-in app already makes**, and copy the response body. You never copy or reuse headers, cookies or tokens, and nothing is automated.
 
 ## What to capture and how

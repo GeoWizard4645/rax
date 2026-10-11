@@ -44,10 +44,12 @@ const fmtT = (t: number, w: Win) => {
 /** Price history (OHLC) + volume for one player over 24h / 7d / 30d. */
 export default function VolumeCandles({ playerKey, name, rating, source }: { playerKey: string; name: string; rating: number; source: SourceId }) {
   const rate = source === 'rateboard';
+  const real = source === 'real';
+  const pooled = real && playerKey.startsWith('pool:');
   const [win, setWin] = useState<Win>('7d');
   const [unit, setUnit] = useState<'card' | 'ppr'>('card');
   const { data, error, loading, reload } = useCandles(playerKey, win, source);
-  const div = unit === 'ppr' && !rate ? rating : 1;
+  const div = unit === 'ppr' && !rate && !pooled ? rating : 1;
   const rows = (data?.candles ?? []).map((c) => ({ ...c, open: c.open / div, close: c.close / div, high: c.high / div, low: c.low / div, range: [c.low / div, c.high / div] as [number, number] }));
   const gated = rate && !!data?.coverage && !data.coverage.ready;
   const last = gated ? undefined : rows[rows.length - 1];
@@ -58,7 +60,7 @@ export default function VolumeCandles({ playerKey, name, rating, source }: { pla
     <div className="panel overflow-hidden">
       <div className="panel-hd flex-wrap">
         <h2>
-          {name} — {rate ? 'best bid rate history' : 'price history'}
+          {name} — {rate ? 'best bid rate history' : real ? (pooled ? 'sale price per rating' : 'sale price history') : 'price history'}
           {last && (
             <span className={`num ml-2 text-xs ${change >= 0 ? 'text-emerald' : 'text-danger'}`}>
               {rate ? `${dec(last.close, 1)}/1` : dec(last.close, unit === 'ppr' ? 2 : 0)} ({change >= 0 ? '+' : ''}
@@ -67,7 +69,7 @@ export default function VolumeCandles({ playerKey, name, rating, source }: { pla
           )}
         </h2>
         <div className="flex flex-wrap gap-2">
-          {!rate && <Segmented value={unit} onChange={setUnit} label="Unit" options={[{ value: 'card', label: 'Card price' }, { value: 'ppr', label: 'Per rating' }]} />}
+          {!rate && !pooled && <Segmented value={unit} onChange={setUnit} label="Unit" options={[{ value: 'card', label: 'Card price' }, { value: 'ppr', label: 'Per rating' }]} />}
           {!gated && <Segmented value={win} onChange={setWin} label="Window" options={[{ value: '24h', label: '24h' }, { value: '7d', label: '7d' }, { value: '30d', label: '30d' }]} />}
         </div>
       </div>
@@ -113,7 +115,7 @@ export default function VolumeCandles({ playerKey, name, rating, source }: { pla
                       <div className="num rounded-md border border-line bg-surface px-3 py-2 text-xs shadow-xl">
                         <div className="mb-1 font-sans text-muted">{new Date(c.t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric' })}</div>
                         O {f(c.open)} · H {f(c.high)} · L {f(c.low)} · C {f(c.close)}
-                        <div className="text-muted">{rate ? `${c.volume} buyers standing` : `volume ${c.volume}`}</div>
+                        <div className="text-muted">{rate ? `${c.volume} buyers standing` : real ? `${c.volume} sale${c.volume === 1 ? '' : 's'} captured` : `volume ${c.volume}`}</div>
                       </div>
                     );
                   }}
@@ -135,7 +137,9 @@ export default function VolumeCandles({ playerKey, name, rating, source }: { pla
       )}
       {rate && data?.coverage?.ready && <div className="border-t border-line p-3"><RecordedChanges changes={data.changes} /></div>}
       <div className="border-t border-line px-3 py-1.5 text-[11px] text-muted">
-        {rate
+        {real
+          ? `Candles are built from the individual sales you captured (open/high/low/close of the SALE prices${pooled ? ', per rating point' : ''} in each 1h / 6h / 1-day bucket; timestamps are Real’s own). Windows end at your newest captured sale${data?.asOf ? ` (${new Date(data.asOf).toLocaleString()})` : ''}. Bars show sales captured — what Real’s recent-activity list showed you, not total market volume. Empty buckets are gaps.`
+          : rate
           ? 'Candles: 1h (24h view), 6h (7d), 1 day (30d) of the BEST standing bid rate (Rax per rating point) — a buyer’s offer, not a sale price. Bars below show buyers standing. Rates change in steps (people pick 10, 15, 20…), so most candles are flat.'
           : 'Candles: 1h (24h view), 6h (7d), 1 day (30d). Bars below show transactions per candle.'}
       </div>

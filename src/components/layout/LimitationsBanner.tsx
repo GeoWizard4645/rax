@@ -24,7 +24,7 @@ export default function LimitationsBanner() {
           <div>
             <b className="text-amber">Sample or estimated</b>
             <ul className="mt-1 list-disc pl-4">
-              <li>Real auction bids, card sale prices, fair value and price history (Tabs 2–3) — Real's own API needs a signed-in app session, so nothing is pulled from it. Both tabs default to Rateboard's standing buy offers instead (bid RATES in Rax per rating point, not sale prices; card rating and rarity unknown); "Imported snapshot" and "Sample" stay selectable and are labelled.</li>
+              <li>Real auction bids, card sale prices, fair value and price history (Tabs 2–3) — Real's own API needs a signed-in app session, so this site pulls nothing from it. When you have captured data from your own Real session (a read-only recorder you run on realapp.com), both tabs default to that "Real marketplace" source: live auctions with real reference prices, sale-based price history and Real's own market stats — only what you opened, bidders unknown, history grows each time you capture. Otherwise they default to Rateboard's standing buy offers (bid RATES in Rax per rating point, not sale prices; card rating and rarity unknown); "Imported snapshot" and "Sample" stay selectable and are labelled.</li>
               <li>Tab 3 history starts when recording started and needs 3 days before spikes, candles and forecasts appear.</li>
               <li>Poll percentages, game pace and polls-per-game (Tab 6) — estimates.</li>
               <li>Tabs 7–8: earnings come from a dated snapshot of Real's per-game Rax; card prices are estimates (Real publishes none). A username pull only knows players and total rating, not each pass's level.</li>
