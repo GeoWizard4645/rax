@@ -1,0 +1,65 @@
+# Market data sources — what was evaluated for Tabs 2–3, and what flows now
+
+Survey date: 2026-10-11. Rules followed: free only, read-only, no login, no bypassing access controls, no forged tokens or Turnstile, an honest `User-Agent`, a handful of plain GET probes. Anything marked **not found** means "looked, could not find it", not "does not exist". Companion to [DATA-SOURCES.md](DATA-SOURCES.md) (which covers Rateboard's routes and Real's gated API in more depth).
+
+## Bottom line
+
+**No free, public, unauthenticated source of Real sale prices, auction bids, fair market value or price history exists that we could find.** Everything on Real's side is login- and signed-token-gated, and Real's Terms of Use forbid scraping. The only real market-shaped data we can read is **Rateboard's standing buy offers** (demand-side bid *rates*, Rax per rating point). Tabs 2–3 now run on those, with the history recorded going forward; imports and sample data stay selectable and labelled.
+
+## Candidates
+
+| # | Source | URL | Returns | Auth / limits / freshness | Permission / ToS | Verdict |
+|---|---|---|---|---|---|---|
+| 1 | **Rateboard board** | `GET rateboard-cgi.pages.dev/api/kv?key=ratebrd_market_v1` | ~640 standing BUY offers (buyer, sport, player, rate per rating point, comment link, post time), per-player floors (113), house list (30), keep list (623), accounts (1,576 — hashes stripped by us) | None. Live; we cache 15–60 s | Owner (Dennis) OK'd all routes | **USED** — Tab 2 bids, Tab 3 history |
+| 2 | Rateboard rolling backups | `GET /api/kv?snap=list` → 25 slots, `GET /api/kv?snap=<slot>` → the whole board at that time (~460 KB, includes password hashes, which we drop in memory) | ~25 hours of board history (one snapshot per ~30–90 min) | None; found by reading the page's admin code (`#ad-backup`); slot ids are numeric | Same permission (all routes) | **USED once** to seed history (`scripts/seed-rb-history.ts` → `public/data/rb-rates-seed.json`, 43 KB, no usernames). Re-runnable to fill gaps |
+| 3 | Rateboard `fullprice` list (inside the board doc) | same `api/kv` document, key `fullprice` (4 rows) | Queued "full price" lookups: user, sport, season, player, `rax`, `owners` — season totals of Rax earned and owner counts, not prices | n/a | — | NOT MARKET DATA. Not exposed by `sanitizeBoard`; unused |
+| 4 | Rateboard `?datareports=1` | `GET /api/kv?datareports=1` | `{"reports":[]}` — UFC data-quality reports | n/a | — | Not market data |
+| 5 | Rateboard `/api/collection`, `/api/players`, `/api/ufc`, `/api/rax`, `/api/scan` | see DATA-SOURCES §1 | Holdings, rosters, UFC metadata, per-game Rax, LLM screenshot reader | various | OK'd | **No prices or auctions in any of them** (re-checked the client for `price`, `sold`, `trade`, `hist`, `stats`: nothing market-like beyond the board). `/api/scan` costs Dennis money; not used |
+| 6 | RaxEdge routes (~100, enumerated by the user) | raxedge.com `/api/real/*` etc. | Scores, DK/FD odds, Real prediction-market probabilities, OTD passes/earnings, **pack-pull odds + avgCardValue** (`/api/real/pack-odds`), parlays, casino, admin-only portfolio | Needs the user's own RaxEdge login; no CORS → only an in-browser export works | @moe_ OK'd | No marketplace/auction/price routes. **Pack odds used** as an optional, default-off Tab 3 panel (cost of a rating point via packs vs bids), via the existing bridge |
+| 7 | Real prediction markets (`/api/real/live-probs`, `/api/real/sync`) | via RaxEdge export | Win probabilities for games | as 6 | as 6 | Game odds, not card prices. Not used in Tabs 2–3 |
+| 8 | Real web API | `web.realapp.com`, `web.realsports.io` | `/cardmarketplacelistings`, `/cardmarketplaceoffers`, `/cardmarketplaceconfiguration`, `/marketplace/fmv/…`, `/cardauctionhistory/{id}`, `/cardtradehistory/{id}`, `/bid`, `/bidhistory`, `/bidinfo`, `/globalcards`, `/dailypurchasablecards`, `/getcardwants`, `/getmatchedusersforwants` (names read from Real's own client bundle) | Login + signed `real-request-token` + Turnstile. Anonymous GET of `/marketplace/fmv`, `/globalcards`, `/dailypurchasablecards` → `400 {"error":"Bad Request","message":"Invalid request"}` (earlier probes of other paths: 401 "Malformed request.") | **Terms of Use ban "data mining, robots, or similar data gathering" without written permission**; forging tokens would circumvent access controls | **NOT USABLE.** Not implemented, and shouldn't be |
+| 9 | Real public pages | `realapp.link/`, `realapp.com/` (301, empty body); `www.realapp.com` → title only; share links `realapp.com/<id>` | No meta tags, JSON-LD or embedded state with card prices seen | none | — | NOT USABLE |
+| 10 | `media.realapp.com` image CDN | public S3/CloudFront | Card artwork only | none | used by Tab 5 | Not market data |
+| 11 | Real docs | `docs.realapp.link` (index `llms.txt`, every page also as `.md`) | Mechanics prose: rax, player cards, packs, level-up, Real Pro, Real Bot, changelog, terms. **No marketplace, auction, fee or FMV pages**; the word "FMV" appears nowhere we fetched | none | public | PARTIAL — mechanics only (below). Fee %, quick-sell formula, bid increments and auction length (only "10 minute timer" and "12-hour auction" appear) are **undocumented** |
+| 12 | Real Bot (in-app) | in the Real app | Per the docs it "can answer questions about card prices and the marketplace" (e.g. biggest NBA auctions) | In-app login | — | **Lead, unverified.** Worth a manual look; no public endpoint found |
+| 13 | otdrax.vercel.app (OTD Rax, by @Knies / @paolo) | site | Earnings rank tables, rarity multipliers, compare, an unfinished "Who to Buy" | none | unknown | Earnings tool, no marketplace prices. Its network calls were not inspected. Owners are worth asking if they hold sales data |
+| 14 | GitHub / npm / PyPI | repo search for `realapp rax cards`, `realsports cards marketplace`, `cardmarketplacelistings`, `cardauctionhistory`, `web.realapp.com` | 0 results | — | — | **Not found** |
+| 15 | Reddit (r/realapp etc.) | — | — | Blocked to our tools | — | **Not checked** (not "confirmed empty") |
+| 16 | X / Twitter | official `@realapp` posts | Announcements (rarity multipliers, features), no price logs | — | — | Not usable. No readable thread with price tables found |
+| 17 | YouTube | e.g. "The Real Sports Auction House Is Awful!" and Rax-making guides | Titles only; no transcripts reachable | — | — | Anecdotal at best |
+| 18 | Google Sheets / Notion / Airtable trackers, Discord bots, Discord-recap blogs, newsletters, other Rateboard-like boards | web search | Only generic physical-card trackers (CollX, Market Movers…) | — | — | **Not found.** Real's Discord is mentioned by support text but no invite or price channel was found |
+| 19 | App Store listing | apps.apple.com | Rax IAP prices (400 for $4.99 … 14,000 for $49.99), Pro $7.99/mo | — | — | Context only |
+
+### Mechanics worth knowing (from Real's changelog and docs)
+
+- 2025-06: auction house for Pro — Pro members list cards for a set duration; others bid Rax. 2025-07: offers on play/performance cards; an accepted offer becomes a **12-hour auction with the offer as first bid**; bid/offer balances are held. 2025-08: Marketplace tab, **target price** auctions with a **10-minute timer**, **Quick sell** (to Real). 2025-09: bulk quick sell, cancel listings/offers, marketplace opened to high-karma non-Pro users. 2026-05: counter-offers. Not documented: fees, quick-sell price, increments, FMV method.
+- Because quick-sell and listing happen inside the app, **no public record of sales exists** for us to read.
+
+## What flows into the tabs now
+
+| | Source | What is real | What is unknown / still sample |
+|---|---|---|---|
+| **Tab 2 · Live (default)** | Rateboard board (client fetch via the existing proxy, 60 s refresh) | every standing offer as a "bid": buyer, player, sport, **rate per rating point**, posted time, comment link; floors and house rates; premium vs the going rate (own 7-day median once ≥ 3 days are recorded, else the other buyers' median, else the sport median — flagged in each row); repeat bidders; your collection matched to buyers (Rateboard's own matcher, message and owed formula) | card **rating and rarity** (shown "unknown"), auction timers, highest-bid/sale history, whether a buyer holds copies. No "live auctions", no Mystic/Legendary filter. Usernames are Rateboard accounts, not necessarily Real handles → contact is the buyer's own comment link |
+| Tab 2 · Imported | the user's own Real session (existing schema-agnostic importer) | whatever they paste | unchanged |
+| Tab 2 · Sample | synthetic | — | everything (badged SAMPLE DATA) |
+| **Tab 3 · Live (default)** | Rateboard board, **recorded over time** (`/api/market/rates`, KV) | current best/median bid rate and buyer counts per player; history of those; spikes in best rate or buyer count; candles of the best bid rate; Monte Carlo of the bid rate; a depth-vs-rate scatter | **sale prices, fair value, ratings, rarities** — none exist in the data. The scatter is rate vs buyers (not fair value). Spikes/candles/forecast stay off until ≥ 3 days (≥ 48 sampled hours) and say how many days exist |
+| Tab 3 · Imported | the Tab 2 import, series built in the browser | whatever the snapshot has | short window → spikes rare |
+| Tab 3 · Sample | synthetic | — | everything |
+| Tab 3 · optional panel (off) | RaxEdge pack odds (user's export) + Rateboard best bids | per-player pack cost per rating point next to the best bid | pack price is an assumption (editable); pulls random; fees ignored |
+
+## How history accumulates
+
+- `GET /api/market/rates` (also called by Tab 2/3 and by `.github/workflows/rate-history.yml` every ~10 min) reads the board (Cache API, 60 s), appends a sample to one KV document `rbrates:v1`, and persists it **at most once per 10 minutes**.
+- The document is a **change log**, not a time grid: per player, `[t, best, median, buyers, offers, house]` only when something changed (bid rates are sticky — 1.1 days of backups changed for only ~6% of players). Hourly series are rebuilt by forward-filling across the UTC hours that were actually sampled; unsampled hours stay gaps. Size ≈ 50–200 KB for 35 days.
+- Seeded from Rateboard's own 25 rolling backups (≈ 1.2 days) so day 0 is not empty; `seeded` is shown in the UI. Re-run `scripts/seed-rb-history.ts` to fill a gap.
+- Guards: an empty board, or one whose offer count halves versus the last sample, is not recorded.
+- **Useful when:** current rates, buyers and the scatter — day 0. Spikes, candles and forecasts — after 3 days of span with ≥ 48 sampled hours — the seed starts at 2026-10-10 00:09 UTC, so with continuous recording that is **about 2026-10-13**. A forecast needs ≥ 5 days of per-player history. 30-day candles/forecasts are meaningful after ~2–4 weeks. Honest expectation: most rates are flat for days; spikes will be rare.
+- **KV write budget:** ≤ 144 writes/day (one per 10 min) out of ~1,000/day free; reads go through a 30-s isolate memo and 60-s Cache API response caching. The legacy `market:v1` document is untouched. If GitHub's scheduler skips runs, history only gets gaps. Without a KV binding the recorder works in memory only and the UI says so.
+
+## What we could not find (be skeptical)
+
+Any public JSON/HTML with card prices, auctions or FMV; any share-link metadata; any repo/package/spreadsheet/newsletter/bot dataset; any machine-readable sale log; any Reddit content; any YouTube transcript; any other Rateboard-like board. The "Real Bot" may answer price questions but only inside the app.
+
+## Real-session capture (the one place real auction data could still come from)
+
+See [CAPTURE-GUIDE.md](CAPTURE-GUIDE.md) — the three captures to ask the user for, so importers can use exact field names instead of guesses.

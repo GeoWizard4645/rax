@@ -1,5 +1,5 @@
 import { Flame } from 'lucide-react';
-import type { SpikeRow } from '../../types/market';
+import type { MarketUnit, SpikeRow } from '../../types/market';
 import { dec, rax } from '../../lib/format';
 import { Empty } from '../ui/StateBlock';
 
@@ -11,11 +11,15 @@ const TAG_STYLE: Record<string, string> = {
 };
 
 /** Cards whose 24h volume or average bid is > 2σ above their 7-day trailing baseline. */
-export default function SpikeCards({ spikes, selected, onSelect }: { spikes: SpikeRow[]; selected: string | null; onSelect: (key: string) => void }) {
+export default function SpikeCards({ spikes, selected, onSelect, unit = 'rax', waiting }: { spikes: SpikeRow[]; selected: string | null; onSelect: (key: string) => void; unit?: MarketUnit; waiting?: string }) {
+  const rate = unit === 'rate';
+  if (waiting) return null; // the history-progress notice above explains why
   if (!spikes.length) {
     return (
       <div className="panel">
-        <Empty title="No velocity spikes right now">Nothing is more than 2 standard deviations above its 7-day baseline.</Empty>
+        <Empty title={rate ? 'No demand spikes right now' : 'No velocity spikes right now'}>
+          {rate ? 'No player’s best bid rate or buyer count is more than 2 standard deviations (and materially) above its 7-day baseline.' : 'Nothing is more than 2 standard deviations above its 7-day baseline.'}
+        </Empty>
       </div>
     );
   }
@@ -32,7 +36,12 @@ export default function SpikeCards({ spikes, selected, onSelect }: { spikes: Spi
             <div>
               <div className="text-sm font-semibold">{s.playerName}</div>
               <div className="text-[11px] text-muted">
-                {s.sport} · <span className="num">{s.rating}</span> {s.rarity}
+                {s.sport}
+                {!rate && (
+                  <>
+                    {' '}· <span className="num">{s.rating}</span> {s.rarity}
+                  </>
+                )}
               </div>
             </div>
             <span className="chip-amber num" title="Standard deviations above the 7-day baseline">
@@ -41,12 +50,12 @@ export default function SpikeCards({ spikes, selected, onSelect }: { spikes: Spi
           </div>
           <div className="num mt-2 grid grid-cols-2 gap-2 text-xs">
             <div>
-              <div className="text-muted">24h volume</div>
-              <span className={s.volumeZ > 2 ? 'text-amber' : ''}>{rax(s.volume24h)}</span> <span className="text-muted">vs {rax(s.volumeBaseline)}/d</span>
+              <div className="text-muted">{rate ? 'Buyers standing (24h avg)' : '24h volume'}</div>
+              <span className={s.volumeZ > 2 ? 'text-amber' : ''}>{rate ? dec(s.volume24h, 1) : rax(s.volume24h)}</span> <span className="text-muted">vs {rate ? dec(s.volumeBaseline, 1) : `${rax(s.volumeBaseline)}/d`}</span>
             </div>
             <div>
-              <div className="text-muted">Avg bid 24h</div>
-              <span className={s.avgBidZ > 2 ? 'text-amber' : ''}>{rax(s.avgBid24h)}</span> <span className="text-muted">vs {rax(s.avgBidBaseline)}</span>
+              <div className="text-muted">{rate ? 'Best bid rate (24h avg)' : 'Avg bid 24h'}</div>
+              <span className={s.avgBidZ > 2 ? 'text-amber' : ''}>{rate ? `${dec(s.avgBid24h, 1)}/1` : rax(s.avgBid24h)}</span> <span className="text-muted">vs {rate ? `${dec(s.avgBidBaseline, 1)}/1` : rax(s.avgBidBaseline)}</span>
             </div>
           </div>
           {s.catalysts.length > 0 && (

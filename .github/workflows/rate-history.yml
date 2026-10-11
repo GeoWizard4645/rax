@@ -1,0 +1,32 @@
+name: Bid-rate history ping
+
+# The edge records Rateboard's standing buy offers (Rax per rating point) into Workers KV, but only when something calls
+# GET /api/market/rates. This free scheduled job calls it every ~10 minutes so history keeps accumulating while nobody is on
+# the site. The endpoint is cached for 60 s and the KV write is throttled to once per 10 min (<= 144 writes/day).
+#
+# GitHub's scheduler is best-effort (runs can be late or skipped) and scheduled workflows on a public repo pause after 60 days
+# without repo activity - history simply has gaps then; nothing breaks. Set the repository variable RAX_BASE_URL if the site
+# isn't at the default below.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: rate-history
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the recorder
+        env:
+          BASE: ${{ vars.RAX_BASE_URL || 'https://rax.vivaanshahani.com' }}
+        run: |
+          curl -fsS --max-time 30 --retry 2 --retry-delay 5 \
+            -A 'rax-super-suite/0.1 (+https://rax.vivaanshahani.com)' \
+            "$BASE/api/market/rates" | head -c 600 || echo "recorder ping failed (non-fatal)"

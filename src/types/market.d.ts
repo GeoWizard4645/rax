@@ -2,8 +2,38 @@
 
 import type { Rarity, Sport } from './real';
 
-/** Where a dataset came from — drives the LIVE / SAMPLE badge shown in the UI. */
-export type DataSource = 'live' | 'sample' | 'imported';
+/**
+ * Where a dataset came from — drives the LIVE / SAMPLE badge shown in the UI.
+ *  - 'live'      a real Real-side feed (only when an authorised upstream is configured)
+ *  - 'rateboard' Rateboard's public offer board: standing BUY offers expressed as a rate per rating point (not sale prices)
+ *  - 'imported'  a snapshot the user copied from their own Real session
+ *  - 'sample'    synthetic demo data
+ */
+export type DataSource = 'live' | 'sample' | 'imported' | 'rateboard';
+
+/** Sports that can appear in market data: Real's sports plus FC (soccer), which Rateboard lists but the card feeds don't. */
+export type MarketSport = Sport | 'FC';
+
+/** What the numbers in a series/response mean: Rax prices (auction bids) or Rateboard bid rates (Rax per rating point). */
+export type MarketUnit = 'rax' | 'rate';
+
+/** How much history the Rateboard-derived recorder has — shown wherever those numbers are. */
+export interface RateCoverage {
+  firstAt: number | null;
+  lastAt: number | null;
+  /** Calendar span between the first and last recorded sample, in days. */
+  spanDays: number;
+  /** UTC hours with at least one sample. */
+  hoursSampled: number;
+  samples: number;
+  /** Samples that came from Rateboard's own rolling backups rather than from live polling. */
+  seeded: number;
+  players: number;
+  /** True once there is enough history for spikes / candles / forecasts (see MIN_HISTORY_DAYS). */
+  ready: boolean;
+  /** False when no KV namespace is bound — history then lives only in the running isolate and will be lost. */
+  persisted: boolean;
+}
 
 export interface AuctionBid {
   auctionId: string;
@@ -60,9 +90,11 @@ export interface SeriesPoint {
 export interface PlayerSeries {
   key: string;
   playerName: string;
-  sport: Sport;
+  sport: MarketSport;
+  /** Card rating. Rateboard-derived series have no rating: it is 1, so "per rating" values equal the bid rate. */
   rating: number;
-  rarity: Rarity;
+  /** null when the source doesn't say (Rateboard offers don't). */
+  rarity: Rarity | null;
   points: SeriesPoint[];
 }
 
@@ -71,9 +103,9 @@ export type CatalystTag = 'Game Tonight' | 'OTD Anniversary' | 'Injury Replaceme
 export interface SpikeRow {
   key: string;
   playerName: string;
-  sport: Sport;
+  sport: MarketSport;
   rating: number;
-  rarity: Rarity;
+  rarity: Rarity | null;
   volume24h: number;
   volumeBaseline: number;
   volumeZ: number;
@@ -88,7 +120,8 @@ export interface SpikeRow {
 export interface FairValuePoint {
   key: string;
   playerName: string;
-  sport: Sport;
+  sport: MarketSport;
+  /** x-axis value: card rating for price data; buyer count for Rateboard bid-rate data (see SpikesResponse.xAxis). */
   rating: number;
   medianPrice: number;
   /** Price the regression line predicts at this rating. */
@@ -113,9 +146,9 @@ export interface AuctionsResponse {
 export interface PlayerRef {
   key: string;
   playerName: string;
-  sport: Sport;
+  sport: MarketSport;
   rating: number;
-  rarity: Rarity;
+  rarity: Rarity | null;
 }
 
 export interface FairValueModel {
@@ -134,10 +167,22 @@ export interface SpikesResponse {
   model: FairValueModel;
   players: PlayerRef[];
   note?: string;
+  /** 'rate' = Rateboard bid rates (Rax per rating point); default 'rax' = prices. */
+  unit?: MarketUnit;
+  /** What FairValuePoint.rating means: 'rating' (default) or 'buyers'. */
+  xAxis?: 'rating' | 'buyers';
+  /** Present for Rateboard-derived data. */
+  coverage?: RateCoverage;
 }
 
 export interface CandlesResponse {
   source: DataSource;
+  unit?: MarketUnit;
+  coverage?: RateCoverage;
+  /** Rateboard data only: the raw recorded change log for this player, oldest first: [t, best, median, buyers, offers, house]. */
+  changes?: Array<[number, number, number, number, number, number]>;
+  /** Rateboard data only: the player's current state, or null when nobody is bidding on them now. */
+  current?: { best: number; median: number; buyers: number; offers: number; house: number; floor?: number | null } | null;
   key: string;
   window: '24h' | '7d' | '30d';
   candles: Array<{ t: number; open: number; high: number; low: number; close: number; volume: number }>;
@@ -148,9 +193,11 @@ export interface ForecastInputs {
   source: DataSource;
   key: string;
   playerName: string;
-  sport: Sport;
-  rarity: Rarity;
+  sport: MarketSport;
+  rarity: Rarity | null;
   rating: number;
+  unit?: MarketUnit;
+  coverage?: RateCoverage;
   /** Latest per-rating price (Rax per rating point). */
   currentPpr: number;
   /** Daily per-rating closes and volumes, oldest first (up to 30 days). */

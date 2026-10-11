@@ -241,7 +241,8 @@ function bandsAndStats(data: Float64Array, N: number, H: number, now: number, st
 /** Run the simulation. `now` is the start time (ms). */
 export function simulate(inp: ForecastInputs, sc: Scenario, now: number): Forecast {
   const params = estimateParams(inp, sc);
-  return simulateWith(params, inp.sport, inp.key, sc, now, inp.currentPpr);
+  // FC (soccer) has no season calendar in season.ts: treat it as year-round rather than invent dates.
+  return simulateWith(params, inp.sport === 'FC' ? 'UFC' : inp.sport, inp.key, sc, now, inp.currentPpr);
 }
 
 export function simulateWith(p: ModelParams, sport: Sport, key: string, sc: Scenario, now: number, currentPpr: number): Forecast {
@@ -286,7 +287,9 @@ export function simulateWith(p: ModelParams, sport: Sport, key: string, sc: Scen
       cumS += s;
       let dR = p.kappaR * (p.rating0 - R) + (inSeason[d] ? p.sigmaRatingIn : p.sigmaRatingOff) * zr;
       if (refresh[d]) dR += p.sigmaRatingRefresh * normal(r);
-      const Rn = clamp(R + dR, 40, 99);
+      // Bid-rate series (Rateboard) carry no card rating (rating0 = 1): hold it fixed instead of letting the 40–99 clamp
+      // yank it to 40 and feed a 4,000% "rating jump" into the price.
+      const Rn = p.rating0 >= 40 ? clamp(R + dR, 40, 99) : R;
       const dRel = (Rn - R) / R;
       R = Rn;
 

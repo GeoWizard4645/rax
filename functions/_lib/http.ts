@@ -1,6 +1,8 @@
 export interface Env {
   /** Rolling market history (hourly snapshots). Optional — without it, only sample data is served. */
   CACHE?: KVNamespace;
+  /** Pages static-asset binding — used to read the bundled bid-rate seed (public/data/rb-rates-seed.json). */
+  ASSETS?: { fetch(input: Request | string): Promise<Response> };
   /** Base URL of Real's API, e.g. https://api.example.com — required by /api/proxy/real. */
   REAL_API_BASE?: string;
   /** Overrides the User-Agent sent to the upstream. Defaults to an honest identifying UA. */

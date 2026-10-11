@@ -26,6 +26,16 @@ This is the legitimate version of "sniff the app's traffic". You look at **respo
 
 **Redact first if you like** — usernames of other people aren't needed to build the adapters, only the *shape* (keys and value types). Replace values freely; keep the keys.
 
+## The three captures to ask for (exact, so importers can use real field names)
+
+Everything else in this guide is generic; if you only do three things, do these — on the Real web app (realapp.com) while signed in as yourself, DevTools → Network → Fetch/XHR, copy the **Response** body only (right-click → Copy → Copy response), never headers, cookies or tokens:
+
+1. **Marketplace listings** — open the Marketplace tab (the main list of auctions) and copy the response of the request named `cardmarketplacelistings`. Please include 10+ listings, and also paste the request's **URL path and query string** (just that line, e.g. what follows `web.realapp.com`) so we know the filters/paging. Note on the screen what one listed card shows (player, rating, rarity, current bid, time left) so we can map the fields to what you see.
+2. **Auction / bid history of one card** — open one card that has had several bids (5+ if you can) and copy the response of `cardauctionhistory/<id>` (or `bidhistory` / `bidinfo`, whichever the card screen fires; if both appear send both). Add the card's rating and rarity as displayed.
+3. **Fair market value of that same card** — the response of `marketplace/fmv/…` for the same card, plus `cardtradehistory/<id>` if the screen requests it. (Optional fourth, cheap and valuable: `cardmarketplaceconfiguration` — fees and limits.)
+
+Why these three: they are the only places the market's rating, rarity, price, bidder and time fields would appear together. Once we have them: Tab 2 gets a real auction importer (instead of guessing field names), Tab 3 gets real price points plus FMV to anchor the fair-value scatter, and the baseline premium switches from bid rates to real sale prices. Redact usernames if you like; keep keys and value types. **Not requested and not done:** any script that calls these endpoints for you, or anything that reuses your session or tokens.
+
 ## What this unlocks
 
 - **Now:** Tab 2 imports any JSON list and maps its fields (it guesses, you can correct). Each import also adds to your 7-day baselines, so premiums become meaningful after a couple of imports.

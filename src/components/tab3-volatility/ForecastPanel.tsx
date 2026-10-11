@@ -8,6 +8,9 @@ import { DataBadge } from '../ui/DataBadge';
 import { Explain } from '../ui/Explain';
 import { ErrorBlock, Loading } from '../ui/StateBlock';
 import { Segmented } from '../ui/Segmented';
+import type { SourceId } from '../ui/SourceSelect';
+import { MIN_FORECAST_DAYS } from '../../../shared/rbHistory';
+import HistoryProgress from './HistoryProgress';
 
 type Metric = 'ppr' | 'price' | 'rating';
 const HORIZONS = [7, 14, 30, 60, 90] as const;
@@ -20,8 +23,9 @@ const PHASE_LABEL: Record<string, string> = {
  * Monte Carlo projection for one player: a fan of 4,000 simulated paths for per-rating price, card price and rating.
  * Stochastic simulation only (no ML) — see shared/montecarlo.ts for the model and its stated assumptions.
  */
-export default function ForecastPanel({ playerKey, name }: { playerKey: string; name: string }) {
-  const { data: inp, error, loading, reload } = useForecastInputs(playerKey);
+export default function ForecastPanel({ playerKey, name, source }: { playerKey: string; name: string; source: SourceId }) {
+  const rate = source === 'rateboard';
+  const { data: inp, error, loading, reload } = useForecastInputs(playerKey, source);
   const [metric, setMetric] = useState<Metric>('ppr');
   const [horizon, setHorizon] = useState<(typeof HORIZONS)[number]>(30);
   const [autoHype, setAutoHype] = useState(true);
@@ -40,7 +44,9 @@ export default function ForecastPanel({ playerKey, name }: { playerKey: string; 
   });
   // `now` is pinned per input load so slider changes re-run the same market snapshot, not a moving clock.
   const now = useMemo(() => Date.now(), [inp]); // eslint-disable-line react-hooks/exhaustive-deps
-  const fc = useMemo(() => (inp ? simulate(inp, scenario, now) : null), [inp, scenario, now]);
+  // Bid-rate history must be long enough to simulate from; until then we explain instead of drawing a fan.
+  const gated = rate && !!inp && (!inp.coverage?.ready || inp.daily.length < MIN_FORECAST_DAYS);
+  const fc = useMemo(() => (inp && !gated ? simulate(inp, scenario, now) : null), [inp, gated, scenario, now]);
 
   const chart = useMemo(() => {
     if (!inp || !fc) return [];
@@ -53,6 +59,16 @@ export default function ForecastPanel({ playerKey, name }: { playerKey: string; 
 
   if (loading && !inp) return <Loading label="Loading forecast inputs…" />;
   if (error) return <ErrorBlock message={error} onRetry={reload} />;
+  if (inp && gated)
+    return (
+      <div className="panel space-y-3 p-3">
+        <h2 className="text-sm font-semibold">{name} — bid-rate projection</h2>
+        {inp.coverage && <HistoryProgress coverage={inp.coverage} what="Monte Carlo projections" />}
+        <p className="text-xs text-muted">
+          This player has {inp.daily.length} day{inp.daily.length === 1 ? '' : 's'} of recorded bid-rate history; the projection needs at least {MIN_FORECAST_DAYS}. Today’s best bid rate is <span className="num text-head">{dec(inp.currentPpr, 1)}/1</span>.
+        </p>
+      </div>
+    );
   if (!inp || !fc) return null;
 
   const f = metric === 'ppr' ? (v: number) => dec(v, 2) : metric === 'price' ? (v: number) => rax(v) : (v: number) => dec(v, 1);
@@ -67,11 +83,11 @@ export default function ForecastPanel({ playerKey, name }: { playerKey: string; 
     <div className="panel overflow-hidden">
       <div className="panel-hd flex-wrap">
         <h2>
-          {name} — Monte Carlo projection <span className="num ml-1 text-xs font-normal text-muted">{fc.paths.toLocaleString()} paths</span>
+          {name} — {rate ? 'bid-rate' : ''} Monte Carlo projection <span className="num ml-1 text-xs font-normal text-muted">{fc.paths.toLocaleString()} paths</span>
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <DataBadge source={inp.source} />
-          <Segmented value={metric} onChange={setMetric} label="Metric" options={[{ value: 'ppr', label: 'Per rating' }, { value: 'price', label: 'Card price' }, { value: 'rating', label: 'Rating' }]} />
+          {rate ? <span className="chip-muted" title="Rateboard offers carry no card rating or price, so only the bid rate itself is projected">Rax per rating point (bid rate)</span> : <Segmented value={metric} onChange={setMetric} label="Metric" options={[{ value: 'ppr', label: 'Per rating' }, { value: 'price', label: 'Card price' }, { value: 'rating', label: 'Rating' }]} />}
         </div>
       </div>
 
@@ -195,7 +211,7 @@ export default function ForecastPanel({ playerKey, name }: { playerKey: string; 
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
           <span>Season: <b className="text-head">{PHASE_LABEL[fc.phaseNow.phase] ?? fc.phaseNow.phase}</b>{fc.phaseNow.daysToStart != null && ` · ${Math.round(fc.phaseNow.daysToStart)}d to kickoff`}</span>
           <span className="num">daily σ {dec(fc.params.sigma * 100, 1)}% → {dec(fc.params.sigmaEff * 100, 1)}% (thin-market ×{dec(d.thinInflation, 2)})</span>
-          <span className="num">{dec(d.volPerDay, 1)} trades/day · quote noise ±{dec(fc.params.obsSd * 100, 0)}%</span>
+          <span className="num">{rate ? `~${dec(d.volPerDay / 24, 1)} buyers standing` : `${dec(d.volPerDay, 1)} trades/day`} · quote noise ±{dec(fc.params.obsSd * 100, 0)}%</span>
           <span className="num">anchor {dec(d.anchorPpr, 2)}/rating · now {dec(inp.currentPpr, 2)}</span>
           <span className="num">own history weight {Math.round(d.wOwn * 100)}% ({d.returnsUsed} days) · peers n={inp.peers.n} ({inp.peers.scope})</span>
         </div>
@@ -207,6 +223,7 @@ export default function ForecastPanel({ playerKey, name }: { playerKey: string; 
             <b className="text-head">Why the range is wide on purpose:</b> volatility is inflated when few trades happen, each path draws its own uncertain drift and volatility, jumps and fat tails are included, and the quoted price at each date carries extra noise that grows as volume falls — Real is a thin, non-efficient market where one bidder can move a price. Treat the 5–95% band as "plausible", not "certain".
           </p>
           <p className="rounded-md border border-amber/30 bg-amber/5 px-3 py-2 text-amber/90">
+            {rate && <><b>This projects a bid rate, not a price.</b> Buyers’ offers move in steps and are posted by a few hundred accounts, so the rate series is sticky and the "price" noise terms below are borrowed from price data, not fitted to bids. </>}
             <b>Assumptions, not facts:</b> the seasonal drift sizes, hype half-life, jump frequency and rating volatility are sensible priors — they are not fitted to Real's market (only ~30 days of price history exist here, so "previous seasons" enter as priors rather than data). Once multi-season history is available these should be re-fitted. {inp.source === 'sample' ? 'This card is on SAMPLE data, so the numbers illustrate the method only. ' : ''}Not financial advice.
           </p>
         </Explain>
