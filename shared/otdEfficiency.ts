@@ -29,6 +29,11 @@ export interface EfficiencyParams {
   /** Max Rax one card can earn per year at this rarity; null = uncapped. */
   annualCap: number | null;
   /** Per-card override of multiplier/cap (e.g. "best rung per card"). When set, `multiplier`/`annualCap` are ignored. */
+  /**
+   * Extra claims per day across ALL sports (Pro's bonus claim — Real grants it only if you win its poll, so this is the
+   * best case). Each day it takes the best payout the per-sport limit left unclaimed. 0 = none.
+   */
+  bonusPerDay?: number;
   levelOf?: (card: OtdCardRecord) => { multiplier: number; annualCap: number | null };
   sports: ReadonlySet<OtdSport>;
   /** Price to buy one card at the target rarity, in Rax. */
@@ -147,8 +152,10 @@ export interface DayCell {
   /** Sport key or 'ALL' when the scope is global. */
   pool: string;
   /** Payouts of the held cards that day, best first. */
-  payouts: Array<{ cardId: string; value: number }>;
+  payouts: Array<{ cardId: string; value: number; bonus?: boolean }>;
   claimed: number;
+  /** Part of `claimed` that came from the Pro bonus claim. */
+  bonus: number;
   /** Payout value that falls outside the claim limit — wasted. */
   wasted: number;
   /** Claim slots with nothing to claim. */
@@ -198,6 +205,10 @@ export interface PortfolioOptions {
   overlapPenalty?: number;
   /** Run add / drop / swap local search after the greedy passes (default true). */
   refine?: boolean;
+  /** Extra iterated-local-search restarts on top of the default (testing / "think harder"). */
+  extraIterations?: number;
+  /** Seed for the restarts' randomness (default fixed → reproducible). */
+  seed?: number;
 }
 
 const poolOf = (p: EfficiencyParams, sport: OtdSport) => (p.scope === 'global' ? 'ALL' : sport);
@@ -409,14 +420,14 @@ export function buildPortfolio(cards: OtdCardRecord[], p: EfficiencyParams, o: P
       const byGain = [...cand].map((i) => [i, winner.chosen.has(i) ? 0 : gainOf(winner, i) / Math.max(1, prepared[i].net)] as const).sort((a, b) => b[1] - a[1]);
       cand = [...new Set([...byAbs.slice(0, 140), ...byGain.slice(0, 220).map((x) => x[0]), ...winner.chosen])];
     }
-    let seed = 0x9e3779b9;
+    let seed = o.seed ?? 0x9e3779b9;
     const rnd = () => ((seed = (Math.imul(seed ^ (seed >>> 15), 2246822507) + 0x6d2b79f5) >>> 0) / 2 ** 32);
     const rebuild = (idx: number[]) => {
       const st = fresh();
       for (const i of idx) addTo(st, i);
       return st;
     };
-    const iters = Math.min(80, 20 + winner.chosen.size * 4);
+    const iters = Math.min(80, 20 + winner.chosen.size * 4) + Math.max(0, o.extraIterations ?? 0);
     for (let t = 0; t < iters && winner.chosen.size > 0; t++) {
       const pool = [...winner.chosen];
       const k = Math.min(pool.length, 1 + Math.floor(rnd() * 3));
@@ -520,7 +531,23 @@ export function buildCalendar(cards: OtdCardRecord[], p: EfficiencyParams): DayC
       const list = (by.get(`${pool}|${d}`) ?? []).sort((a, b) => b.value - a.value);
       const claimed = list.slice(0, p.claimsPerDay).reduce((s, x) => s + x.value, 0);
       const wasted = list.slice(p.claimsPerDay).reduce((s, x) => s + x.value, 0);
-      cells.push({ mmdd: d, pool, payouts: list, claimed, wasted, emptySlots: Math.max(0, p.claimsPerDay - list.length) });
+      cells.push({ mmdd: d, pool, payouts: list, claimed, bonus: 0, wasted, emptySlots: Math.max(0, p.claimsPerDay - list.length) });
+    }
+  }
+  const nBonus = Math.max(0, Math.floor(p.bonusPerDay ?? 0));
+  if (nBonus > 0) {
+    const byDay = new Map<number, DayCell[]>();
+    for (const c of cells) (byDay.get(c.mmdd) ?? byDay.set(c.mmdd, []).get(c.mmdd)!).push(c);
+    for (const group of byDay.values()) {
+      const left: Array<{ cell: DayCell; at: number; value: number }> = [];
+      for (const cell of group) cell.payouts.forEach((x, at) => at >= p.claimsPerDay && left.push({ cell, at, value: x.value }));
+      left.sort((a, b) => b.value - a.value);
+      for (const l of left.slice(0, nBonus)) {
+        l.cell.payouts[l.at].bonus = true;
+        l.cell.claimed += l.value;
+        l.cell.bonus += l.value;
+        l.cell.wasted -= l.value;
+      }
     }
   }
   return cells;

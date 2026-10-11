@@ -37,6 +37,8 @@ export interface EffState {
   overrides: Record<string, Record<string, number>>;
   /** Cards you already own, id → ladder key of the level you hold them at (free, always in the set). */
   ownedLevels: Record<string, string>;
+  /** Cards looked up live because they weren't in the snapshot (the snapshot only holds the top cards). */
+  customCards: OtdCardRecord[];
   /** Last username pulled in the profile view. */
   username: string;
 }
@@ -60,6 +62,7 @@ export const DEFAULT_STATE: EffState = {
   rate: DEFAULT_PRICE_PARAMS.ratePerRating.mid.value,
   overrides: {},
   ownedLevels: {},
+  customCards: [],
   username: '',
 };
 
@@ -144,4 +147,11 @@ export function effParams(s: EffState, levels: Map<string, Level>, sportsOn: Rea
     priceOf: (c) => levels.get(c.id)?.est.price ?? 0,
     sunkFraction: s.hold === 'keep' ? 1 : s.flipLoss,
   };
+}
+
+/** Snapshot cards plus any the user looked up live (custom cards win on an id clash). */
+export function withCustom(base: OtdCardRecord[] | undefined, custom: OtdCardRecord[]): OtdCardRecord[] {
+  if (!custom.length) return base ?? [];
+  const ids = new Set(custom.map((c) => c.id));
+  return [...(base ?? []).filter((c) => !ids.has(c.id)), ...custom];
 }

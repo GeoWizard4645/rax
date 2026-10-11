@@ -8,7 +8,7 @@
  *    hold and how much rating you have, but not each pass's level.
  */
 import { RARITY_LADDER, ICONIC_LEVELS, rungForRating } from './otdRules';
-import type { OtdCardRecord, OtdSport } from './otdSnapshot';
+import { mmddFromIso, seasonLabelFor, DAY_OTHER, DAY_POSTSEASON, type OtdCardRecord, type OtdSport } from './otdSnapshot';
 import { norm } from './rateboard';
 import type { CollectionPlayer } from '../src/types/real';
 
@@ -41,16 +41,42 @@ function seasonMatches(card: OtdCardRecord, text: string): boolean {
   return /^\d{4}$/.test(t) && String(card.season) === t;
 }
 
+export interface MissingPass {
+  name: string;
+  sport: OtdSport;
+  /** Rax season label (see seasonLabelFor), e.g. 2024 for NBA "23-24". */
+  season: number;
+  level: string;
+  line: number;
+}
+
 export interface ParsedPasses {
   /** card id → ladder key */
   owned: Record<string, string>;
   errors: string[];
+  /** Well-formed passes that aren't in the snapshot (it only holds the top cards) — can be looked up live. */
+  missing: MissingPass[];
+}
+
+/** "24-25" / "2024-25" / "2025" → Rax's season number for the sport (NFL/NHL/CFB: start year; NBA/CBB/WNBA-style: end year; else the year). */
+export function raxSeasonFromText(sport: OtdSport, text: string): number | null {
+  const t = text.trim();
+  const range = /^(\d{2}|\d{4})\s*[-/]\s*(\d{2}|\d{4})$/.exec(t);
+  const full = (x: string) => (x.length === 2 ? 2000 + +x : +x);
+  if (range) {
+    const a = full(range[1]);
+    const b = full(range[2]);
+    return sport === 'NBA' || sport === 'CBB' ? b : a;
+  }
+  if (/^\d{4}$/.test(t)) return +t;
+  return null;
 }
 
 /** Parse lines "Player, Sport, Season, Level" against the snapshot's cards. Unmatched lines are reported, not dropped silently. */
 export function parsePasses(text: string, cards: OtdCardRecord[]): ParsedPasses {
   const owned: Record<string, string> = {};
   const errors: string[] = [];
+  const missing: MissingPass[] = [];
   const by = new Map<string, OtdCardRecord[]>();
   for (const c of cards) {
     const k = `${c.sport}|${norm(c.name)}`;
@@ -62,10 +88,14 @@ export function parsePasses(text: string, cards: OtdCardRecord[]): ParsedPasses 
     const level = parseLevel(levelTxt ?? '');
     if (!name || !sport || seasonTxt === undefined || !level) return void errors.push(`Line ${i + 1}: expected "Player, Sport, Season, Level" (e.g. Saquon Barkley, NFL, 24-25, Mystic 3).`);
     const hit = (by.get(`${sport}|${norm(name)}`) ?? []).find((c) => seasonMatches(c, seasonTxt));
-    if (!hit) return void errors.push(`Line ${i + 1}: no ${sport} card for "${name}" ${seasonTxt} in this dataset (only top cards are included).`);
+    if (!hit) {
+      const season = raxSeasonFromText(sport, seasonTxt);
+      if (season) return void missing.push({ name, sport, season, level, line: i + 1 });
+      return void errors.push(`Line ${i + 1}: no ${sport} card for "${name}" ${seasonTxt} in this dataset (only top cards are included).`);
+    }
     owned[hit.id] = level;
   });
-  return { owned, errors };
+  return { owned, errors, missing };
 }
 
 export interface HeldPlayer {
@@ -92,4 +122,28 @@ export function matchCollection(players: CollectionPlayer[], sport: OtdSport, ca
     held.push({ name: p.name, sport, cards: p.total, heldRating: p.totalValue, rungIfConcentrated: rungForRating(p.totalValue), seasons });
   }
   return { held: held.sort((a, b) => b.heldRating - a.heldRating), unmatched };
+}
+
+/** Rateboard `mode=games` rows for ONE player-season → a card record (every game kept, however small). Null when there are none. */
+export function recordFromGames(sport: OtdSport, season: number, name: string, rows: Array<{ day: string; rax?: number | null; seasonType?: string | null; team?: string | null; playerId?: number | string | null }>): OtdCardRecord | null {
+  const days = rows
+    .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(String(r.day)) && Number(r.rax) > 0)
+    .map((r): [number, number, number] => [mmddFromIso(r.day), Number(r.rax), r.seasonType === 'postseason' ? DAY_POSTSEASON : r.seasonType && r.seasonType !== 'regular' ? DAY_OTHER : 0])
+    .sort((a, b) => a[0] - b[0]);
+  if (!days.length) return null;
+  const pid = String(rows.find((r) => r.playerId != null)?.playerId ?? norm(name).replace(/ /g, '-'));
+  return {
+    id: `${sport}|${season}|${pid}`,
+    sport,
+    season,
+    seasonLabel: seasonLabelFor(sport, season),
+    playerId: pid,
+    name,
+    team: rows.find((r) => r.team)?.team ?? '',
+    owners: null,
+    games: days.length,
+    annual: days.reduce((n, d) => n + d[1], 0),
+    best: Math.max(...days.map((d) => d[1])),
+    days,
+  };
 }

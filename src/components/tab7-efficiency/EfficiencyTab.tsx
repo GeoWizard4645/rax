@@ -12,7 +12,7 @@ import PortfolioPanel from './PortfolioPanel';
 import ProfilePanel from './ProfilePanel';
 import SwapCalc from './SwapCalc';
 import UpgradeLadder from './UpgradeLadder';
-import { buildLevels, effParams, windowDays, windowStart } from './model';
+import { buildLevels, effParams, windowDays, windowStart, withCustom } from './model';
 import { useEffState } from './useEffState';
 import { useOtdSnapshot } from './useOtdSnapshot';
 
@@ -23,7 +23,7 @@ export default function EfficiencyTab() {
   const [view, setView] = useState<View>('rank');
 
   const snap = useOtdSnapshot(s.method);
-  const all = snap.data?.cards;
+  const all = useMemo(() => (snap.data ? withCustom(snap.data.cards, s.customCards) : undefined), [snap.data, s.customCards]);
   const available = useMemo(() => [...new Set((all ?? []).map((c) => c.sport))] as OtdSport[], [all]);
   const sportsOn = useMemo(() => new Set<OtdSport>(s.sports.length ? s.sports : available), [s.sports, available]);
   const cards = useMemo(() => (all ?? []).filter((c) => sportsOn.has(c.sport)), [all, sportsOn]);

@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { buildCalendar, buildPortfolio, payoutScale, type DayCell } from '../../../shared/otdEfficiency';
+import { buildCalendar, buildPortfolio, payoutScale, sportCeilings, type DayCell } from '../../../shared/otdEfficiency';
 import { OTD_SPORTS, type OtdCardRecord, type OtdSport } from '../../../shared/otdSnapshot';
 import { rax } from '../../lib/format';
 import { Loading } from '../ui/StateBlock';
-import { buildLevels, effParams } from '../tab7-efficiency/model';
+import { buildLevels, effParams, withCustom } from '../tab7-efficiency/model';
 import MultiYearPanel from './MultiYearPanel';
 import { useEffState } from '../tab7-efficiency/useEffState';
 import { useOtdSnapshot } from '../tab7-efficiency/useOtdSnapshot';
@@ -35,7 +35,7 @@ export default function CalendarTab() {
   const [showOverlaps, setShowOverlaps] = useState(false);
   const [sel, setSel] = useState<number>(keyOf(now.getMonth() + 1, now.getDate()));
 
-  const all = snap.data?.cards;
+  const all = useMemo(() => (snap.data ? withCustom(snap.data.cards, s.customCards) : undefined), [snap.data, s.customCards]);
   const available = useMemo(() => [...new Set((all ?? []).map((c) => c.sport))].sort((a, b) => OTD_SPORTS.indexOf(a) - OTD_SPORTS.indexOf(b)), [all]);
   const sportsOn = useMemo(() => new Set<OtdSport>(sportsSel.length ? sportsSel : available), [sportsSel, available]);
   const byId = useMemo(() => new Map((all ?? []).map((c) => [c.id, c])), [all]);
@@ -43,17 +43,31 @@ export default function CalendarTab() {
 
   const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const start = useMemo(() => new Date(Date.UTC(year, month - 1, 1)), [year, month]);
-  const params = useMemo(() => ({ ...effParams(s, levels, sportsOn, { start, days }), claimsPerDay: claims }), [s, levels, sportsOn, start, days, claims]);
+  // 2 guaranteed claims per sport per day; "3 claims" adds Pro's single bonus claim across all sports (best case: poll won).
+  const bonus = claims === 3 ? 1 : 0;
+  const params = useMemo(() => ({ ...effParams(s, levels, sportsOn, { start, days }), claimsPerDay: 2, bonusPerDay: bonus }), [s, levels, sportsOn, start, days, bonus]);
+  const yearWin = useMemo(() => ({ start: new Date(Date.UTC(year, 0, 1)), days: 366 }), [year]);
 
   const ownedCards = useMemo(() => Object.keys(s.ownedLevels).map((id) => byId.get(id)).filter((c): c is OtdCardRecord => !!c), [s.ownedLevels, byId]);
+  // The preview is optimised over the WHOLE year (not the Tab 7 timeframe) and independent of the 2/3-claims toggle, so the
+  // month you look at and the 2-vs-3 comparison always use the same set of cards.
   const best = useMemo(() => {
     if (source !== 'best' || !all) return [];
-    const p = { ...effParams(s, levels, sportsOn), claimsPerDay: claims };
+    const p = { ...effParams(s, levels, sportsOn, yearWin), claimsPerDay: 2 };
     return buildPortfolio(all, p, { budget: s.budget, maxCards: s.maxCards, minMarginalRoi: s.minRoi, ownedIds: new Set(Object.keys(s.ownedLevels)), overlapMode: s.overlapMode }).picks.map((x) => x.row.card);
-  }, [source, all, s, levels, sportsOn, claims]);
+  }, [source, all, s, levels, sportsOn, yearWin]);
   const shown = source === 'mine' ? ownedCards : best;
 
   const cal = useMemo(() => buildCalendar(shown, params), [shown, params]);
+  const yearParams = useMemo(() => ({ ...effParams(s, levels, sportsOn, yearWin), claimsPerDay: 2, bonusPerDay: bonus }), [s, levels, sportsOn, yearWin, bonus]);
+  const yearStats = useMemo(() => {
+    const ycal = buildCalendar(shown, yearParams);
+    const claimed = ycal.reduce((n, c) => n + c.claimed, 0);
+    const guaranteed = claimed - ycal.reduce((n, c) => n + c.bonus, 0);
+    const ceiling = all ? sportCeilings(all, yearParams).reduce((n, c) => n + c.total, 0) : 0;
+    const smallGames = shown.reduce((n, c) => n + Math.max(0, c.annual - c.days.reduce((a, d) => a + d[1], 0)) * payoutScale(c, yearParams), 0);
+    return { claimed, guaranteed, ceiling, smallGames, waste: ycal.reduce((n, c) => n + c.wasted, 0) };
+  }, [shown, yearParams, all]);
   const byDay = useMemo(() => {
     const m = new Map<number, DayCell[]>();
     for (const c of cal) (m.get(c.mmdd) ?? m.set(c.mmdd, []).get(c.mmdd)!).push(c);
@@ -126,7 +140,7 @@ export default function CalendarTab() {
             </div>
             <div className="seg" role="group" aria-label="Claims per day">
               <button aria-pressed={claims === 2} onClick={() => setClaims(2)}>2 claims</button>
-              <button aria-pressed={claims === 3} onClick={() => setClaims(3)} title="Pro's extra claim is only granted if you win its poll — this shows the best case">3 claims (Pro, best case)</button>
+              <button aria-pressed={claims === 3} onClick={() => setClaims(3)} title="Real gives 2 guaranteed claims per sport. Pro adds ONE more per day, across all sports, only if you win its poll — this shows the best case.">3 claims (2 per sport + Pro bonus)</button>
             </div>
             <div className="seg" role="group" aria-label="Overlap priority" title="How the Best-combination preview chooses cards">
               <button aria-pressed={s.overlapMode === 'earnings'} onClick={() => set({ overlapMode: 'earnings' })}>Max earnings</button>
@@ -146,6 +160,24 @@ export default function CalendarTab() {
             </div>
           )}
 
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            <div className="panel px-3 py-2"><div className="text-[11px] uppercase tracking-wider text-muted">{year} claimable</div><div className="num text-lg font-semibold text-emerald">{rax(yearStats.claimed)}</div><div className="text-[11px] text-muted">{claims === 3 ? `incl. ${rax(yearStats.claimed - yearStats.guaranteed)} Pro bonus` : '2 per sport per day'}</div></div>
+            <div className="panel px-3 py-2"><div className="text-[11px] uppercase tracking-wider text-muted">Of the ceiling</div><div className="num text-lg font-semibold">{yearStats.ceiling > 0 ? `${((yearStats.guaranteed / yearStats.ceiling) * 100).toFixed(1)}%` : '—'}</div><div className="text-[11px] text-muted">if you held every card: {rax(yearStats.ceiling)}</div></div>
+            <div className="panel px-3 py-2"><div className="text-[11px] uppercase tracking-wider text-muted">Wasted on overlap</div><div className={`num text-lg font-semibold ${yearStats.waste > 0 ? 'text-amber' : ''}`}>{rax(yearStats.waste)}</div><div className="text-[11px] text-muted">{overlapDays.length} overlap day(s) in {MONTHS[month - 1]}</div></div>
+            <div className="panel px-3 py-2"><div className="text-[11px] uppercase tracking-wider text-muted">Small games not on the calendar</div><div className="num text-lg font-semibold text-muted">+{rax(yearStats.smallGames)}</div><div className="text-[11px] text-muted">games under 3 General rax, per year</div></div>
+          </div>
+          {claims === 3 && yearStats.claimed - yearStats.guaranteed <= 0 && (
+            <p className="hint">The Pro bonus claim takes the best payout your 2-per-sport claims left unclaimed. Your set has no spare payouts on any day, so it adds nothing yet — hold more cards than claim slots on some days and it will.</p>
+          )}
+          {source === 'best' && (
+            <div className="flex flex-wrap items-center gap-3 rounded-md border border-line px-3 py-2 text-xs text-muted">
+              <span>Preview set is optimised over the whole of {year}, at <b className="text-head">{s.rarity === 'AUTO' ? 'auto' : s.rarity}</b>:</span>
+              <label className="flex items-center gap-1">cards <input className="field num !w-16 !py-0.5" type="number" min={1} max={60} value={s.maxCards} onChange={(e) => set({ maxCards: Math.min(60, Math.max(1, +e.target.value || 1)) })} /></label>
+              <label className="flex items-center gap-1">budget <input className="field num !w-28 !py-0.5" inputMode="numeric" value={s.budget} onChange={(e) => set({ budget: Math.max(0, +e.target.value.replace(/[^\d]/g, '') || 0) })} /></label>
+              <span>(rarity, prices and sports come from Tab 7)</span>
+            </div>
+          )}
+
           <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
             <div className="space-y-4">
               <div className="panel">
@@ -157,7 +189,7 @@ export default function CalendarTab() {
                         {Array.from({ length: 12 }, (_, i) => firstYear + i).map((y) => <option key={y} value={y}>{y}</option>)}
                       </select>
                     </div>
-                    <div className="num text-xs text-emerald">{rax(monthTotal)} Rax</div>
+                    <div className="num text-xs text-emerald">{rax(monthTotal)} Rax this month</div>
                   </div>
                   <button className="btn-ghost btn-sm" disabled={atEnd} onClick={() => nav(1)} aria-label="Next month"><ChevronRight size={14} /></button>
                 </div>
@@ -170,7 +202,7 @@ export default function CalendarTab() {
                     const waste = dayWaste(k);
                     const on = k === sel;
                     return (
-                      <button key={i} onClick={() => setSel(k)} aria-pressed={on} className={`min-h-[56px] rounded-md border px-1.5 py-1 text-left transition-colors ${on ? 'border-action bg-action/10' : 'border-line hover:bg-hover'}`} title={waste > 0 ? `${rax(waste)} Rax of payouts exceed the ${claims}-claim limit` : undefined}>
+                      <button key={i} onClick={() => setSel(k)} aria-pressed={on} className={`min-h-[56px] rounded-md border px-1.5 py-1 text-left transition-colors ${on ? 'border-action bg-action/10' : 'border-line hover:bg-hover'}`} title={waste > 0 ? `${rax(waste)} Rax of payouts exceed the 2-claims-per-sport limit` : undefined}>
                         <div className="flex items-center justify-between text-[10px] text-muted"><span>{d}</span>{waste > 0 && <span className="text-amber">●</span>}</div>
                         <div className={`num text-xs font-semibold ${tot > 0 ? 'text-emerald' : 'text-muted/40'}`}>{tot > 0 ? rax(tot) : '—'}</div>
                       </button>
@@ -181,7 +213,7 @@ export default function CalendarTab() {
 
               {showOverlaps && (
                 <div className="panel">
-                  <div className="panel-hd"><h2>Overlaps in {MONTHS[month - 1]}</h2><span className="hint">days where more cards pay than the {claims} claims allow</span></div>
+                  <div className="panel-hd"><h2>Overlaps in {MONTHS[month - 1]}</h2><span className="hint">days where more cards pay than your 2 claims per sport allow</span></div>
                   {overlapDays.length === 0 ? <p className="hint px-3 py-4">No overlaps this month.</p> : (
                     <table className="tbl">
                       <thead><tr><th>Day</th><th className="r">You claim</th><th className="r">Wasted</th></tr></thead>
@@ -210,16 +242,16 @@ export default function CalendarTab() {
                             {cell.payouts.map((p, i) => {
                               const c = byId.get(p.cardId);
                               return (
-                                <tr key={p.cardId} className={i >= claims ? 'opacity-50' : ''}>
+                                <tr key={p.cardId} className={i >= 2 && !p.bonus ? 'opacity-50' : ''}>
                                   <td>{c?.name} <span className="num text-xs text-muted">{c?.seasonLabel}</span> <span className="text-[11px] text-muted">{levels.get(p.cardId)?.key}</span></td>
                                   <td className="r num font-semibold">{rax(p.value)}</td>
-                                  <td className="r">{i < claims ? <span className="chip-emerald">claim</span> : <span className="chip-amber">wasted</span>}</td>
+                                  <td className="r">{i < 2 ? <span className="chip-emerald">claim</span> : p.bonus ? <span className="chip-blue" title="Pro bonus claim">bonus claim</span> : <span className="chip-amber">wasted</span>}</td>
                                 </tr>
                               );
                             })}
-                            {Array.from({ length: Math.max(0, claims - cell.payouts.length) }, (_, i) => <tr key={`e${i}`}><td className="text-muted">open claim slot</td><td /><td /></tr>)}
+                            {Array.from({ length: Math.max(0, 2 - cell.payouts.length) }, (_, i) => <tr key={`e${i}`}><td className="text-muted">open claim slot</td><td /><td /></tr>)}
                           </tbody></table>
-                        ) : <p className="hint">No card of yours pays here — {claims} open claim slots.</p>}
+                        ) : <p className="hint">No card of yours pays here — 2 open claim slots.</p>}
                         {sug.length > 0 && (
                           <div className="mt-1 rounded-md border border-line/70 bg-base/40 px-2 py-1.5">
                             <div className="text-[10px] uppercase tracking-wider text-muted">best cards to add for this day</div>

@@ -7,6 +7,7 @@ import type { OtdCardRecord, OtdSport } from '../../../shared/otdSnapshot';
 import type { RbSport } from '../../../shared/rateboard';
 import type { CollectionPlayer } from '../../types/real';
 import { pullCollection } from '../../lib/rateboardClient';
+import { fetchCardRecord } from '../../lib/otdLive';
 import { rax } from '../../lib/format';
 import { Stat } from '../ui/Stat';
 import { Spinner } from '../ui/StateBlock';
@@ -66,11 +67,31 @@ export default function ProfilePanel({ s, set, cards, params }: { s: EffState; s
     }
   };
 
-  const importPasses = () => {
+  const importPasses = async () => {
     const r = parsePasses(paste, cards);
-    setErrs(r.errors.slice(0, 8));
-    if (Object.keys(r.owned).length) {
-      set({ ownedLevels: { ...s.ownedLevels, ...r.owned } });
+    const errors = [...r.errors];
+    const owned = { ...s.ownedLevels, ...r.owned };
+    const custom = [...s.customCards];
+    if (r.missing.length) {
+      // Not in the snapshot (it only holds the top cards) → look each up live so nothing is silently dropped.
+      for (const m of r.missing.slice(0, 40)) {
+        setBusy(`Looking up ${m.name} (${m.sport} ${m.season}) on Rateboard…`);
+        try {
+          const rec = await fetchCardRecord(m.sport, m.season, m.name);
+          if (!rec) errors.push(`Line ${m.line}: Rateboard has no ${m.sport} ${m.season} games for "${m.name}".`);
+          else {
+            if (!custom.some((c) => c.id === rec.id)) custom.push(rec);
+            owned[rec.id] = m.level;
+          }
+        } catch (e) {
+          errors.push(`Line ${m.line}: lookup failed (${(e as Error).message}).`);
+        }
+      }
+      setBusy(null);
+    }
+    setErrs(errors.slice(0, 8));
+    if (Object.keys(owned).length !== Object.keys(s.ownedLevels).length || custom.length !== s.customCards.length) {
+      set({ ownedLevels: owned, customCards: custom });
       setPaste('');
     }
   };
@@ -105,7 +126,7 @@ export default function ProfilePanel({ s, set, cards, params }: { s: EffState; s
           <div className="panel-hd"><h2>Paste your passes (exact)</h2></div>
           <div className="panel-bd space-y-2">
             <textarea className="field num min-h-[88px]" value={paste} onChange={(e) => setPaste(e.target.value)} placeholder={'Saquon Barkley, NFL, 24-25, Mystic 3\nAshton Jeanty, CFB, 24-25, Epic\nShohei Ohtani, MLB, 2025, Iconic'} aria-label="Passes" />
-            <div className="flex items-center gap-2"><button className="btn-primary btn-sm" disabled={!paste.trim()} onClick={importPasses}>Add to my set</button><span className="hint">Player, Sport, Season, Level — one per line</span></div>
+            <div className="flex items-center gap-2"><button className="btn-primary btn-sm" disabled={!paste.trim()} onClick={() => void importPasses()}>Add to my set</button><span className="hint">Player, Sport, Season, Level — one per line. Cards missing from the snapshot are looked up live.</span></div>
             {errs.length > 0 && <ul className="list-disc pl-5 text-xs text-danger">{errs.map((e) => <li key={e}>{e}</li>)}</ul>}
           </div>
         </div>

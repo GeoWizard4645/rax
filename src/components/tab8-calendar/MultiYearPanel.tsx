@@ -26,7 +26,7 @@ export default function MultiYearPanel({ cards, params, levels, firstYear }: { c
       const perCard = new Map<string, number>();
       for (const c of cal) {
         wasted += c.wasted;
-        c.payouts.slice(0, params.claimsPerDay).forEach((p) => perCard.set(p.cardId, (perCard.get(p.cardId) ?? 0) + p.value));
+        c.payouts.forEach((p, i) => (i < params.claimsPerDay || p.bonus) && perCard.set(p.cardId, (perCard.get(p.cardId) ?? 0) + p.value));
       }
       for (const [id, v] of perCard) {
         const cap = levels.get(id)?.annualCap ?? null;

@@ -231,3 +231,19 @@ describe('windowKeys across leap years', () => {
     expect(new Set(leap).size).toBe(366);
   });
 });
+
+describe('Pro bonus claim', () => {
+  // NBA pays 10, 6, 3 on day 101; MLB pays 8, 7, 1. Per-sport limit 2 leaves NBA 3 and MLB 1 over.
+  const cs = [card('n1', 'NBA', [[101, 10]]), card('n2', 'NBA', [[101, 6]]), card('n3', 'NBA', [[101, 3]]), card('m1', 'MLB', [[101, 8]]), card('m2', 'MLB', [[101, 7]]), card('m3', 'MLB', [[101, 1]])];
+  const win = { start: new Date(Date.UTC(2026, 0, 1)), days: 2 };
+  const total = (bonus: number) => buildCalendar(cs, base({ window: win, bonusPerDay: bonus })).reduce((n, c) => n + c.claimed, 0);
+  it('adds exactly one extra claim across sports: the best leftover', () => {
+    expect(total(0)).toBe((10 + 6 + 8 + 7) * 150);
+    expect(total(1)).toBe((10 + 6 + 8 + 7 + 3) * 150);
+  });
+  it('is never worth less than not having it, and moves waste into claimed', () => {
+    const cal = buildCalendar(cs, base({ window: win, bonusPerDay: 1 }));
+    expect(cal.reduce((n, c) => n + c.wasted, 0)).toBe(1 * 150);
+    expect(cal.reduce((n, c) => n + c.bonus, 0)).toBe(3 * 150);
+  });
+});

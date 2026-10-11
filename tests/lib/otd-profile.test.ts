@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchCollection, parseLevel, parsePasses } from '../../shared/otdProfile';
+import { matchCollection, parseLevel, parsePasses, raxSeasonFromText, recordFromGames } from '../../shared/otdProfile';
 import type { OtdCardRecord } from '../../shared/otdSnapshot';
 
 const card = (id: string, sport: OtdCardRecord['sport'], name: string, season: number, seasonLabel: string, annual: number): OtdCardRecord => ({
@@ -32,7 +32,9 @@ describe('parsePasses', () => {
   it('reports lines it cannot use', () => {
     const r = parsePasses('Nobody, NFL, 24-25, Epic\nSaquon Barkley, NFL, 24-25, Banana\nSaquon Barkley, NFL, 22-23, Epic', cards);
     expect(Object.keys(r.owned)).toHaveLength(0);
-    expect(r.errors).toHaveLength(3);
+    // 'Banana' is a bad level (error); the other two are well-formed passes missing from the dataset → looked up live.
+    expect(r.errors).toHaveLength(1);
+    expect(r.missing.map((m) => [m.name, m.season])).toEqual([['Nobody', 2024], ['Saquon Barkley', 2022]]);
   });
 });
 
@@ -43,5 +45,31 @@ describe('matchCollection', () => {
     expect(held[0].seasons.map((c) => c.id)).toEqual(['a', 'b']);
     expect(held[0].rungIfConcentrated).toBe('Legendary 1');
     expect(unmatched.map((p) => p.name)).toEqual(['Unknown Guy']);
+  });
+});
+
+describe('raxSeasonFromText', () => {
+  it('maps the community label to Rax\'s season number', () => {
+    expect(raxSeasonFromText('NFL', '24-25')).toBe(2024);
+    expect(raxSeasonFromText('NBA', '23-24')).toBe(2024);
+    expect(raxSeasonFromText('CBB', '2023-24')).toBe(2024);
+    expect(raxSeasonFromText('MLB', '2025')).toBe(2025);
+    expect(raxSeasonFromText('MLB', 'nope')).toBeNull();
+  });
+});
+
+describe('recordFromGames', () => {
+  it('keeps every game, sums the season and flags the postseason', () => {
+    const r = recordFromGames('MLB', 2022, 'Shohei Ohtani', [
+      { day: '2022-10-03', rax: 2, seasonType: 'regular', playerId: 7 },
+      { day: '2022-04-07', rax: 30, seasonType: 'regular', playerId: 7 },
+      { day: '2022-10-09', rax: 12, seasonType: 'postseason', playerId: 7 },
+      { day: '2022-05-01', rax: 0 },
+    ]);
+    expect(r!.id).toBe('MLB|2022|7');
+    expect(r!.annual).toBe(44);
+    expect(r!.days).toEqual([[407, 30, 0], [1003, 2, 0], [1009, 12, 1]]);
+    expect(r!.best).toBe(30);
+    expect(recordFromGames('MLB', 2022, 'X', [])).toBeNull();
   });
 });
