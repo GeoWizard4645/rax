@@ -1,11 +1,11 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, FlaskConical, Radio, TriangleAlert } from 'lucide-react';
 import { REFERENCE_CARDS } from '../../../shared/otdReference';
 import { OTD_SPORTS, seasonLabelFor, type OtdSnapshot } from '../../../shared/otdSnapshot';
 import { norm } from '../../../shared/rateboard';
 import { rax } from '../../lib/format';
 import { Explain } from '../ui/Explain';
-import type { OtdMethod } from './useOtdSnapshot';
+import { fetchSnapshot, type OtdMethod } from './useOtdSnapshot';
 
 interface Info { key: OtdMethod; title: string; tag: string; icon: typeof Radio; pros: string[]; cons: string[] }
 
@@ -74,6 +74,7 @@ export default function MethodPanel({ method, onMethod, snapshot, loading, error
       </div>
       {loading && <p className="hint">Loading the {method} snapshot…</p>}
       {error && <div className="rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
+      {snapshot && method === 'modeled' && <ModelCheck modeled={snapshot} />}
       {snapshot && <SnapshotInfo snapshot={snapshot} />}
     </div>
   );
@@ -119,6 +120,68 @@ function SnapshotInfo({ snapshot }: { snapshot: OtdSnapshot }) {
           </tbody>
         </table>
       </div>
+    </Explain>
+  );
+}
+
+type Acc = Record<string, { n: number; r2Rating: number | null; maeRax: number | null; within1Rax: number | null; annual?: { spearmanAll: number | null; top30?: { mape: number | null } | undefined } }>;
+
+/** Measured error of the rating model, plus a head-to-head against the observed snapshot for cards present in both. */
+function ModelCheck({ modeled }: { modeled: OtdSnapshot }) {
+  const [acc, setAcc] = useState<Acc | null>(null);
+  const [obs, setObs] = useState<OtdSnapshot | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void import('../../../shared/ratingModel').then((m) => alive && setAcc(m.MODEL_ACCURACY as unknown as Acc));
+    void fetchSnapshot('observed').then((o) => alive && setObs(o)).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const cmp = useMemo(() => {
+    if (!obs) return null;
+    const by = new Map(obs.cards.map((c) => [`${c.sport}|${c.season}|${norm(c.name)}`, c]));
+    const rows = modeled.cards.flatMap((m) => {
+      const o = by.get(`${m.sport}|${m.season}|${norm(m.name)}`);
+      return o && o.annual > 0 ? [{ m, o, err: (m.annual - o.annual) / o.annual }] : [];
+    });
+    const abs = rows.map((r) => Math.abs(r.err)).sort((a, b) => a - b);
+    return { rows, median: abs.length ? abs[Math.floor(abs.length / 2)] : null, p90: abs.length ? abs[Math.floor(abs.length * 0.9)] : null, worst: [...rows].sort((a, b) => Math.abs(b.err) - Math.abs(a.err)).slice(0, 6) };
+  }, [obs, modeled]);
+
+  return (
+    <Explain title="How accurate is the model? (measured, held-out season)" defaultOpen>
+      <p>Rax per game is <b className="text-head">exactly round(k × rating)</b> (k is Real's published per-sport factor, doubled in the playoffs). The weak step is predicting the <i>rating</i> from a box score — that part is a fitted approximation. Golf and soccer aren't modeled at all.</p>
+      {acc && (
+        <div className="overflow-x-auto">
+          <table className="tbl">
+            <thead><tr><th>Sport</th><th className="r">Games tested</th><th className="r">Rating R²</th><th className="r" title="Mean absolute error of one game's Rax">Avg error / game</th><th className="r" title="Share of games within ±1 Rax">Within ±1 Rax</th><th className="r" title="Spearman rank agreement between predicted and Real's season totals over every matched player — easy to score well on; see the note below for the top seasons that matter">Season-total rank match (all matched)</th></tr></thead>
+            <tbody>
+              {Object.entries(acc).map(([sp, a]) => (
+                <tr key={sp}>
+                  <td>{sp}</td>
+                  <td className="r num">{a.n.toLocaleString()}</td>
+                  <td className="r num">{a.r2Rating?.toFixed(3) ?? '—'}</td>
+                  <td className="r num">{a.maeRax != null ? `${a.maeRax.toFixed(2)} Rax` : '—'}</td>
+                  <td className="r num">{a.within1Rax != null ? `${Math.round(a.within1Rax * 100)}%` : '—'}</td>
+                  <td className={`r num ${a.annual?.spearmanAll != null && a.annual.spearmanAll < 0.7 ? 'text-amber' : ''}`}>{a.annual?.spearmanAll != null ? a.annual.spearmanAll.toFixed(2) : 'n/a'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p><b className="text-head">Weakest:</b> college football and MLB. Among each sport's top ~150 seasons — the ones that matter for buying — rank agreement falls to ≈ 0.55 (CFB) and 0.63 (MLB) versus 0.9+ for NBA, NFL, NHL and WNBA. Real's top college seasons are full of obscure low-owner defenders, and low-owner players earn up to ~1.5× more than the stats imply — something the model can't see. Treat those two sports' modeled numbers as rough.</p>
+      {cmp && cmp.rows.length > 0 && (
+        <>
+          <p><b className="text-head">Head-to-head vs observed</b> on {cmp.rows.length.toLocaleString()} cards present in both: the typical (median) season total is off by <b className="text-head">{((cmp.median ?? 0) * 100).toFixed(1)}%</b>; 9 in 10 are within {((cmp.p90 ?? 0) * 100).toFixed(0)}%.</p>
+          <div className="max-h-48 overflow-auto">
+            <table className="tbl">
+              <thead><tr><th>Biggest misses</th><th className="r">Modeled</th><th className="r">Observed</th><th className="r">Error</th></tr></thead>
+              <tbody>{cmp.worst.map((r) => <tr key={r.m.id}><td>{r.m.name} <span className="chip-muted">{r.m.sport}</span> <span className="num text-xs text-muted">{r.m.seasonLabel}</span></td><td className="r num">{rax(r.m.annual)}</td><td className="r num">{rax(r.o.annual)}</td><td className="r num text-amber">{r.err > 0 ? '+' : ''}{(r.err * 100).toFixed(0)}%</td></tr>)}</tbody>
+            </table>
+          </div>
+        </>
+      )}
     </Explain>
   );
 }
