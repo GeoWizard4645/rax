@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { rankCards, type EfficiencyParams, type PortfolioOptions } from '../../../shared/otdEfficiency';
 import type { OtdSport } from '../../../shared/otdSnapshot';
+import { buildPackIndex, coverage } from '../../../shared/raxedgePackOdds';
+import { useRaxEdge } from '../../lib/raxedgeStore';
 import { Explain } from '../ui/Explain';
 import { Segmented } from '../ui/Segmented';
 import { Loading } from '../ui/StateBlock';
@@ -28,7 +30,11 @@ export default function EfficiencyTab() {
   const sportsOn = useMemo(() => new Set<OtdSport>(s.sports.length ? s.sports : available), [s.sports, available]);
   const cards = useMemo(() => (all ?? []).filter((c) => sportsOn.has(c.sport)), [all, sportsOn]);
 
-  const levels = useMemo(() => buildLevels(cards, s), [cards, s.rarity, s.autoMin, s.multOverride, s.rate, s.overrides, s.ownedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
+  const stored = useRaxEdge();
+  const packIndex = useMemo(() => buildPackIndex(stored.packOdds?.players), [stored.packOdds]);
+  const pack = useMemo(() => ({ index: packIndex, at: stored.packOdds?.at ?? null, cov: coverage(packIndex, cards) }), [packIndex, stored.packOdds, cards]);
+
+  const levels = useMemo(() => buildLevels(cards, s, s.usePackRates ? packIndex : null), [cards, s.rarity, s.autoMin, s.multOverride, s.rate, s.overrides, s.ownedLevels, s.usePackRates, s.packPrice, packIndex]); // eslint-disable-line react-hooks/exhaustive-deps
   const days = windowDays(s);
   const start = useMemo(() => windowStart(s), [s.start]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -70,10 +76,10 @@ export default function EfficiencyTab() {
       <Explain title="How efficiency is calculated">
         <p><span className="num text-head">Payout per card = min(cap, multiplier × Σ General-level rax)</span> — the multiplier and cap come from Real's player-card ladder (Common 2× … Mystic 10 105× … Iconic 1 150× up to Iconic 20 250×). Below Iconic the cap is ≈ 500 × the multiplier, so any card with ~500+ General rax a season pays the same flat amount at, say, Legendary 3 — only Iconic is uncapped.</p>
         <p>You get <b className="text-head">2 guaranteed claims per sport per day</b>, so a card is only worth what it adds on days its sport isn't already covered. The portfolio picker adds cards one at a time by <i>extra</i> payout per Rax of cost, which discounts overlaps automatically. Pro's bonus claim is shown separately as an expected value.</p>
-        <p><span className="num text-head">Cost = 200 + rating needed × Rax-per-rating.</span> Real has no upgrade fee: a card's level is the summed rating of the play cards you own for that player-season, so "upgrading" means buying rating. The default rate is Rateboard's median standing offer — an estimate, not a sale price.</p>
+        <p><span className="num text-head">Cost = 200 + rating needed × Rax-per-rating.</span> Real has no upgrade fee: a card's level is the summed rating of the play cards you own for that player-season, so "upgrading" means buying rating. The default rate is Rateboard's median standing offer — an estimate, not a sale price. Optionally (Parameters → “Price rating per player”), once you've imported RaxEdge pack odds, each player's rate becomes pack price ÷ (3 × the average rating of cards pulled from their pack) instead.</p>
       </Explain>
 
-      <Controls s={s} set={set} available={available} />
+      <Controls s={s} set={set} available={available} pack={pack} />
 
       <Segmented<View> value={view} onChange={setView} label="View" options={[
         { value: 'rank', label: 'Card rankings' }, { value: 'portfolio', label: 'Best combination' }, { value: 'mine', label: `My cards${Object.keys(s.ownedLevels).length ? ` (${Object.keys(s.ownedLevels).length})` : ''}` }, { value: 'outlook', label: 'Sports coming up' },
@@ -82,13 +88,13 @@ export default function EfficiencyTab() {
 
       {snap.loading && <Loading label="Loading the dataset…" />}
       {!snap.loading && snap.data && view === 'rank' && (
-        <CardRankings rows={rows} overrides={overridesFlat} onOverride={onOverride} owned={ownedSet} onToggleOwned={toggleOwned} priceNote={(r) => `${levels.get(r.card.id)?.key ?? ''}: ${levels.get(r.card.id)?.est.basis ?? ''}`} />
+        <CardRankings rows={rows} overrides={overridesFlat} onOverride={onOverride} owned={ownedSet} onToggleOwned={toggleOwned} priceNote={(r) => `${levels.get(r.card.id)?.key ?? ''}: ${levels.get(r.card.id)?.est.basis ?? ''}`} packPriced={(id) => !!levels.get(id)?.est.perCardBasis} />
       )}
       {!snap.loading && snap.data && view === 'portfolio' && <PortfolioPanel cards={cards} params={params} options={options} levels={levels} proWin={s.proWin} />}
       {!snap.loading && snap.data && view === 'mine' && <ProfilePanel s={s} set={set} cards={all ?? []} params={params} />}
       {!snap.loading && snap.data && view === 'outlook' && <OutlookPanel cards={cards} params={params} windowDaysN={days} />}
-      {!snap.loading && snap.data && view === 'ladder' && <UpgradeLadder cards={cards} s={s} />}
-      {view === 'swaps' && <SwapCalc />}
+      {!snap.loading && snap.data && view === 'ladder' && <UpgradeLadder cards={cards} s={s} pack={s.usePackRates ? packIndex : null} />}
+      {view === 'swaps' && <SwapCalc packOdds={packIndex} packAt={pack.at} s={s} />}
     </div>
   );
 }

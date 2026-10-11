@@ -5,8 +5,10 @@
  * The fair probabilities come from shared/oddsConsensus.ts and the payout maths from shared/realPayout.ts; this file
  * only glues them to what the user typed.
  */
-import type { MarketType, OddsEvent, OddsResponse, OddsSourceStatus, OddsSport } from '../../../shared/odds';
+import type { MarketType, OddsEvent, OddsResponse, OddsSource, OddsSourceStatus, OddsSport } from '../../../shared/odds';
 import { bestLines, consensusFair, type Consensus, type DevigMethod, type SourceFair } from '../../../shared/oddsConsensus';
+import type { RealPctSuggestion } from '../../../shared/oddsRaxEdge';
+import { teamsMatch } from '../../../shared/oddsSources';
 import {
   breakEvenPct,
   evPct,
@@ -181,6 +183,11 @@ export interface Cfg {
   /** Kelly fraction (0.25 = quarter Kelly). */
   fraction: number;
   devig: DevigMethod;
+  /**
+   * Opt-in sources that may join a consensus (FanDuel / DraftKings from the user's RaxEdge export). Absent or empty = exactly the
+   * sources the API serves, i.e. the behaviour before those options existed.
+   */
+  include?: ReadonlySet<OddsSource>;
 }
 
 /** idx: 0 = home / over, 1 = away / under, 2 = draw. */
@@ -327,12 +334,13 @@ export const MARKET_LABEL: Record<MarketType, string> = { moneyline: 'Moneyline'
 export const marketTypes = (e: Pick<OddsEvent, 'markets'>): MarketType[] => MARKET_ORDER.filter((t) => e.markets.some((m) => m.type === t));
 
 /** Lines offered for a spread/total, best (most sources, nearest 50/50) first; `[null]` for a moneyline. */
-export function linesOf(e: Pick<OddsEvent, 'markets'>, type: MarketType, method: DevigMethod): number[] {
+export function linesOf(e: Pick<OddsEvent, 'markets'>, type: MarketType, method: DevigMethod, include?: ReadonlySet<OddsSource>): number[] {
   if (type === 'moneyline') return [];
-  return bestLines(e, type, method).flatMap((l) => (l.line === null ? [] : [l.line]));
+  return bestLines(e, type, method, include).flatMap((l) => (l.line === null ? [] : [l.line]));
 }
 
-export const consensusFor = (e: OddsEvent, type: MarketType, line: number | null, method: DevigMethod): Consensus => consensusFair(e, type, type === 'moneyline' ? null : line, method);
+export const consensusFor = (e: OddsEvent, type: MarketType, line: number | null, method: DevigMethod, include?: ReadonlySet<OddsSource>): Consensus =>
+  consensusFair(e, type, type === 'moneyline' ? null : line, method, include);
 
 /** "Seattle -7.5" / "Over 47.5": how a line reads for a spread (home line) or total. */
 export const lineText = (type: MarketType, line: number | null, e: Pick<OddsEvent, 'home'>): string =>
@@ -399,6 +407,15 @@ export function emptyReason(sport: OddsSport, r: OddsResponse | null): EmptyReas
 /* Formatting                                                          */
 /* ------------------------------------------------------------------ */
 
+/** "just now" / "12 min ago" / "3 h ago" / "2 d ago" for an age in ms. */
+export function fmtAge(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return 'just now';
+  const m = Math.round(ms / 60_000);
+  return m < 1 ? 'just now' : m < 90 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+}
+/** How stale a RaxEdge snapshot is: odds move in minutes, so amber after 15 min and red after 60. */
+export const ageTone = (ms: number): 'ok' | 'amber' | 'red' => (ms > 60 * 60_000 ? 'red' : ms > 15 * 60_000 ? 'amber' : 'ok');
+
 export const fmtP = (x: number | null | undefined, d = 1): string => (x == null || !Number.isFinite(x) ? '—' : `${(x * 100).toFixed(d)}%`);
 export const fmtNum = (x: number | null | undefined, d = 1): string => (x == null || !Number.isFinite(x) ? '—' : x.toFixed(d));
 export const fmtSigned = (x: number | null | undefined, d = 1, suffix = ''): string => (x == null || !Number.isFinite(x) ? '—' : `${x > 0 ? '+' : ''}${x.toFixed(d)}${suffix}`);
@@ -454,29 +471,99 @@ export interface BoardRow {
   confidence: Consensus['confidence'];
   spread: number | null;
   nSources: number;
+  /** This side's Real % came from the user's RaxEdge export (not typed). */
+  auto?: AutoReal | null;
 }
 
-/** Every side with a typed Real % across the given events, sorted by EV (best first). */
-export function buildBoard(events: OddsEvent[], store: EntryStore, cfg: Cfg): { rows: BoardRow[]; used: Set<string> } {
+/**
+ * Every side with a Real % across the given events, sorted by EV (best first). The % is what the user typed; with `suggestions`
+ * (opt-in, from RaxEdge) a side the user left empty falls back to Real's own number. Without `suggestions` this is exactly the
+ * typed-only board.
+ */
+export function buildBoard(events: OddsEvent[], store: EntryStore, cfg: Cfg, suggestions: RealPctSuggestion[] = []): { rows: BoardRow[]; used: Set<string> } {
   const rows: BoardRow[] = [];
   const used = new Set<string>();
-  if (!Object.keys(store).length) return { rows, used };
+  if (!Object.keys(store).length && !suggestions.length) return { rows, used };
   for (const e of events) {
     for (const type of marketTypes(e)) {
-      const lines: Array<number | null> = type === 'moneyline' ? [null] : linesOf(e, type, cfg.devig);
+      const lines: Array<number | null> = type === 'moneyline' ? [null] : linesOf(e, type, cfg.devig, cfg.include);
       for (const line of lines) {
-        const found = lookupEntry(store, e, type, line);
-        if (!found || used.has(found.key)) continue;
-        used.add(found.key);
-        const c = consensusFor(e, type, line, cfg.devig);
-        const { rows: sides } = evalMarket(c, found, cfg);
+        const typed = lookupEntry(store, e, type, line);
+        const sug = type === 'moneyline' ? findAuto(suggestions, e) : null;
+        if (typed && used.has(typed.key)) continue;
+        if (!typed && !sug) continue;
+        if (typed) used.add(typed.key);
+        const c = consensusFor(e, type, line, cfg.devig, cfg.include);
+        const eff = withAuto(typed, sug, hasDraw(c));
+        const { rows: sides } = evalMarket(c, eff, cfg);
         for (const s of sides) {
           if (!s.ev) continue;
-          rows.push({ id: `${found.key}#${s.idx}`, entryKey: found.key, event: e, type, line, side: s, eval: s.ev, confidence: c.confidence, spread: c.spread, nSources: c.sources.length });
+          const isAuto = s.idx === 2 ? !!eff?.autoD : !!eff?.auto[s.idx];
+          rows.push({ id: `${typed?.key ?? `auto|${e.id}|${type}`}#${s.idx}`, entryKey: typed?.key ?? '', event: e, type, line, side: s, eval: s.ev, confidence: c.confidence, spread: c.spread, nSources: c.sources.length, auto: isAuto ? sug : null });
         }
       }
     }
   }
   rows.sort((a, b) => b.eval.ev - a.eval.ev);
   return { rows, used };
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Real % from the user's RaxEdge export (opt-in auto-fill)            */
+/* ------------------------------------------------------------------ */
+
+/** A RaxEdge Real % suggestion oriented to one event (home|over first), in percent. */
+export interface AutoReal {
+  /** Real's % for [home, away]. */
+  p: [number, number];
+  /** Real's % for the draw when the suggestion carries one. */
+  d: number | null;
+  s: RealPctSuggestion;
+}
+
+const round1 = (x: number) => Math.round(x * 1000) / 10;
+
+/** The suggestion for this game (same sport and teams in either orientation, kick-off within 3 h), oriented to the event. Moneyline only. */
+export function findAuto(suggestions: RealPctSuggestion[], e: Pick<OddsEvent, 'sport' | 'home' | 'away' | 'startsAt' | 'startApprox'>): AutoReal | null {
+  let best: { a: AutoReal; d: number } | null = null;
+  for (const s of suggestions) {
+    if (s.sport !== e.sport) continue;
+    const straight = teamsMatch(e.home, s.home) && teamsMatch(e.away, s.away);
+    const swapped = !straight && teamsMatch(e.home, s.away) && teamsMatch(e.away, s.home);
+    if (!straight && !swapped) continue;
+    const d = Math.abs(Date.parse(e.startsAt) - Date.parse(s.startsAt));
+    const sameDay = e.startsAt.slice(0, 10) === s.startsAt.slice(0, 10) || hoursApart(e.startsAt, s.startsAt) <= 24;
+    if (e.startApprox ? !sameDay : d > 3 * 3600_000) continue;
+    const h = round1(s.sideProbs.home);
+    const a = round1(s.sideProbs.away);
+    const p: [number, number] = straight ? [h, a] : [a, h];
+    if (!isValidPct(p[0]) || !isValidPct(p[1])) continue;
+    if (!best || d < best.d) best = { a: { p, d: s.draw != null ? round1(s.draw) : null, s }, d };
+  }
+  return best?.a ?? null;
+}
+
+/** What the editor/EV should use: typed values win per side; RaxEdge fills only the sides the user left empty. */
+export interface Resolved extends Pick<Found, 'p' | 'd' | 'dnb'> {
+  /** Per [side 0, side 1]: this value is RaxEdge's, not typed. */
+  auto: [boolean, boolean];
+  /** The draw value is RaxEdge's. */
+  autoD: boolean;
+  src: AutoReal | null;
+}
+export function withAuto(typed: Pick<Found, 'p' | 'd' | 'dnb'> | null, auto: AutoReal | null, threeWay = false): Resolved | null {
+  if (!typed && !auto) return null;
+  const tp = typed?.p ?? [null, null];
+  // A 3-way (soccer) market needs Real's draw price too; without it a RaxEdge pair would be a different market. Skip.
+  const use = auto && (!threeWay || typed?.dnb || auto.d != null) ? auto : null;
+  const p: [number | null, number | null] = [tp[0] ?? use?.p[0] ?? null, tp[1] ?? use?.p[1] ?? null];
+  return {
+    p,
+    d: typed?.d ?? (use && !typed?.dnb ? use.d : null),
+    dnb: !!typed?.dnb,
+    auto: [tp[0] == null && use != null, tp[1] == null && use != null],
+    autoD: typed?.d == null && !typed?.dnb && use?.d != null,
+    src: use,
+  };
 }

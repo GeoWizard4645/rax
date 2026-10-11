@@ -4,6 +4,13 @@ import type { DataSource } from '../../types/market';
 /** Every panel that can show synthetic data carries one of these, so SAMPLE is never mistaken for LIVE. */
 export function DataBadge({ source, note }: { source: DataSource | null | undefined; note?: string }) {
   if (!source) return null;
+  if (source === 'rateboard') {
+    return (
+      <span className="chip-emerald" title={note || 'Live from Rateboard’s public board: standing buy offers (Rax per rating point). Not Real sale prices.'}>
+        <Radio size={11} /> LIVE · RATEBOARD BIDS
+      </span>
+    );
+  }
   if (source === 'imported') {
     return (
       <span className="chip-blue" title={note || 'A snapshot you imported from your own session'}>

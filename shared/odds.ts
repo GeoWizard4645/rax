@@ -3,14 +3,32 @@
  * that turns them into a no-vig "fair" probability and an expected value against Real's own market.
  *
  * Sources (all free, no API key, read-only): Kalshi's public market-data API, Polymarket's public Gamma/CLOB API, and
- * the DraftKings lines ESPN embeds in its public scoreboard JSON. FanDuel has no public API and is NOT used.
+ * the DraftKings lines ESPN embeds in its public scoreboard JSON. FanDuel has no public API and is NOT used by the server;
+ * FanDuel and DraftKings lines can optionally be added client-side from the user's own RaxEdge export (see OddsSource).
  */
 
-export type OddsSource = 'kalshi' | 'polymarket' | 'espn-dk';
+/**
+ * 'fanduel' and 'draftkings' come ONLY from a user's own RaxEdge export (shared/oddsRaxEdge.ts, imported in their browser) and are
+ * merged client-side when the user switches that option on; the API (functions/api/odds/events.ts) never produces them.
+ */
+export type OddsSource = 'kalshi' | 'polymarket' | 'espn-dk' | 'fanduel' | 'draftkings';
 export type OddsSport = 'NBA' | 'NHL' | 'MLB' | 'WNBA' | 'NFL' | 'CFB' | 'CBB' | 'FC' | 'UFC';
 export type MarketType = 'moneyline' | 'spread' | 'total';
 
-export const ODDS_SOURCE_LABEL: Record<OddsSource, string> = { kalshi: 'Kalshi', polymarket: 'Polymarket', 'espn-dk': 'DraftKings (via ESPN)' };
+export const ODDS_SOURCE_LABEL: Record<OddsSource, string> = {
+  kalshi: 'Kalshi',
+  polymarket: 'Polymarket',
+  'espn-dk': 'DraftKings (via ESPN)',
+  fanduel: 'FanDuel (via RaxEdge)',
+  draftkings: 'DraftKings (via RaxEdge)',
+};
+
+/** Sources the API serves by default. The others are opt-in and never take part in a consensus unless the caller includes them. */
+export const BASE_ODDS_SOURCES: readonly OddsSource[] = ['kalshi', 'polymarket', 'espn-dk'];
+/** Opt-in sources that come from the user's own RaxEdge export. */
+export const RAXEDGE_ODDS_SOURCES: readonly OddsSource[] = ['fanduel', 'draftkings'];
+/** Sportsbooks (a margin to remove, weight 1) as opposed to exchanges. */
+export const isBookSource = (s: OddsSource): boolean => s === 'espn-dk' || s === 'fanduel' || s === 'draftkings';
 
 /** One side of a two-way market. `side` is 'home' | 'away' for moneyline/spread and 'over' | 'under' for totals. */
 export interface OddsOutcome {

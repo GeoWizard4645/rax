@@ -1,15 +1,25 @@
 import { RARITY_LADDER, multiplierFor } from '../../../shared/otdRules';
 import { OTD_SPORTS, type OtdSport } from '../../../shared/otdSnapshot';
 import { DEFAULT_PRICE_PARAMS } from '../../../shared/otdPricing';
+import { CEILING_MULT, DEFAULT_MIN_SAMPLE, RATEBOARD_FLOOR, type PackIndex } from '../../../shared/raxedgePackOdds';
 import { DEFAULT_STATE, RUNG_KEYS, windowDays, windowYears, type EffState, type WindowPreset } from './model';
 
 const PRESETS: Array<{ v: WindowPreset; l: string }> = [
   { v: '7', l: '1 week' }, { v: '30', l: '1 month' }, { v: '90', l: '3 months' }, { v: '180', l: '6 months' }, { v: '365', l: '1 year' }, { v: '5y', l: '5 years' }, { v: '10y', l: '10 years' }, { v: 'custom', l: 'Custom' },
 ];
 
+export interface PackInfo { index: PackIndex; at: number | null; cov: { covered: number; total: number } }
+
+const ageOf = (at: number | null) => {
+  if (!at) return 'age unknown';
+  const m = Math.round((Date.now() - at) / 60000);
+  return m < 1 ? 'imported just now' : m < 90 ? `imported ${m} min ago` : m < 2880 ? `imported ${Math.round(m / 60)} h ago` : `imported ${Math.round(m / 1440)} d ago`;
+};
+
 const num = (v: string, min = 0) => Math.max(min, +v.replace(/[^\d.]/g, '') || 0);
 
-export default function Controls({ s, set, available }: { s: EffState; set: (p: Partial<EffState>) => void; available: OtdSport[] }) {
+export default function Controls({ s, set, available, pack }: { s: EffState; set: (p: Partial<EffState>) => void; available: OtdSport[]; pack?: PackInfo }) {
+  const havePack = !!pack && pack.index.size > 0;
   const sportsOn = s.sports.length ? s.sports : available;
   const toggle = (sp: OtdSport) => {
     const next = sportsOn.includes(sp) ? sportsOn.filter((x) => x !== sp) : [...sportsOn, sp];
@@ -75,6 +85,20 @@ export default function Controls({ s, set, available }: { s: EffState; set: (p: 
           <label className="flex items-center justify-between gap-2 text-xs text-muted" title="Price of one rating point of play cards. Default = Rateboard's median standing offer.">Rax per rating
             <input className="field num !w-28" type="number" min={1} step="0.5" value={s.rate} onChange={(e) => set({ rate: num(e.target.value, 1) })} />
           </label>
+          <label className={`flex items-start gap-2 text-xs ${havePack ? 'text-head' : 'text-muted opacity-70'}`} title="Rating per player = pack price ÷ (3 × the average rating of cards pulled from that player's pack), from RaxEdge's pack odds. Off by default.">
+            <input type="checkbox" className="mt-0.5" disabled={!havePack} checked={havePack && s.usePackRates} onChange={(e) => set({ usePackRates: e.target.checked })} aria-label="Price rating per player from RaxEdge pack odds" />
+            <span>Price rating per player from RaxEdge pack odds</span>
+          </label>
+          {!havePack && <p className="hint">Import your RaxEdge export (My cards → Import from RaxEdge) to enable.</p>}
+          {havePack && s.usePackRates && (
+            <>
+              <label className="flex items-center justify-between gap-2 text-xs text-muted" title="Real's Player pack price runs ~200–400 with the player's season rank.">Pack price (Rax)
+                <input className="field num !w-28" type="number" min={1} step="1" value={s.packPrice} onChange={(e) => set({ packPrice: num(e.target.value, 1) })} />
+              </label>
+              <p className="hint">{pack!.cov.covered} of {pack!.cov.total} cards in view have pack data; others use the global rate. Data {ageOf(pack!.at)}. Rate = pack price ÷ (3 × avg card rating), blended toward the global rate under {DEFAULT_MIN_SAMPLE} pulls and kept between {RATEBOARD_FLOOR} and {CEILING_MULT}× the global rate. Assumes you keep every pulled card.</p>
+            </>
+          )}
+          {havePack && !s.usePackRates && <p className="hint">{pack!.index.size.toLocaleString()} pack rows imported ({ageOf(pack!.at)}). Tick to price each player's rating from them.</p>}
           <label className="flex items-center justify-between gap-2 text-xs text-muted" title="The combination picker won't add a card that earns less than this share of its cost inside the timeframe.">Min. return per card %
             <input className="field num !w-20" type="number" min={0} value={Math.round(s.minRoi * 100)} onChange={(e) => set({ minRoi: num(e.target.value) / 100 })} />
           </label>

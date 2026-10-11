@@ -151,6 +151,14 @@ export interface PriceParams {
   method: 'ladder' | 'payback' | 'blend';
   /** Known prices for specific cards, keyed `${sport}|${season}|${playerId}`. A number applies to every rarity; an object is keyed by rarity key. */
   overrides: Record<string, number | Record<string, number>>;
+  /**
+   * OPTIONAL per-card Rax-per-rating, keyed by card id (e.g. derived from RaxEdge pack odds, shared/raxedgePackOdds.ts).
+   * When a card has an entry, `rate` REPLACES the global rate band for that card and is final: the market-side adjustments
+   * (sportRateMult, ownersAdj, buyPremium) are NOT applied on top, because a pack-derived rate is a direct purchase cost, not
+   * a standing bid (the builder is expected to have shrunk toward the already-adjusted global rate). The band is the global
+   * band scaled by rate / global mid. Absent or no entry for a card = exactly the old behaviour.
+   */
+  rateByCard?: Record<string, { rate: number; basis: string }>;
 }
 
 export const DEFAULT_PRICE_PARAMS: PriceParams = {
@@ -218,13 +226,24 @@ export interface PriceEstimate {
   ratingNeeded?: number;
   /** Rate (Rax per rating point) actually used, when the ladder method ran. */
   rateUsed?: number;
+  /** Set only when a per-card rate (`PriceParams.rateByCard`) drove the price: that rate's explanation. */
+  perCardBasis?: string;
 }
 
 const round = (n: number) => Math.round(n);
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
-/** Rate band for one card after sport and owners adjustments. */
-export function rateBand(card: Pick<PriceCardInput, 'sport' | 'owners'>, p: PriceParams): { mid: number; low: number; high: number } {
+/**
+ * Rate band for one card. Order: per-card rate (`rateByCard`, final, no further multipliers) -> otherwise the global
+ * band x sportRateMult x ownersAdj x buyPremium. `perCardBasis` is set only in the per-card case.
+ */
+export function rateBand(card: Pick<PriceCardInput, 'sport' | 'owners'> & { id?: string }, p: PriceParams): { mid: number; low: number; high: number; perCardBasis?: string } {
+  const own = card.id != null ? p.rateByCard?.[card.id] : undefined;
+  if (own && own.rate > 0) {
+    const g = p.ratePerRating;
+    const k = g.mid.value > 0 ? own.rate / g.mid.value : 1;
+    return { mid: own.rate, low: g.low.value * k, high: g.high.value * k, perCardBasis: own.basis };
+  }
   const sportMult = p.sportRateMult[card.sport] ?? 1;
   const ownersMult =
     card.owners != null && card.owners > 0 && p.ownersAdj.elasticity !== 0
@@ -278,13 +297,14 @@ export function estimateCardPrice(card: PriceCardInput, targetRarity: string, pa
 
   // 4. Model.
   const rate = rateBand(card, params);
+  const pcb = rate.perCardBasis;
   const ratingNeeded = rung.totalRating;
   const ladder = {
     price: claim + ratingNeeded * rate.mid,
     low: claim + ratingNeeded * rate.low,
     high: claim + ratingNeeded * rate.high,
   };
-  const ladderBasis = `${fmt(claim)} claim + ${fmt(ratingNeeded)} rating x ${rate.mid.toFixed(1)} Rax/rating (band ${rate.low.toFixed(0)}-${rate.high.toFixed(0)})`;
+  const ladderBasis = `${fmt(claim)} claim + ${fmt(ratingNeeded)} rating x ${rate.mid.toFixed(1)} Rax/rating (band ${rate.low.toFixed(0)}-${rate.high.toFixed(0)})${pcb ? ` [${pcb}]` : ''}`;
 
   const pb = params.pricePerAnnualRax;
   const annualRung = card.annual * rung.multiplier;
@@ -312,6 +332,7 @@ export function estimateCardPrice(card: PriceCardInput, targetRarity: string, pa
       method: 'blend',
       ratingNeeded,
       rateUsed: rate.mid,
+      ...(pcb ? { perCardBasis: pcb } : {}),
     };
   }
   const note = params.method !== 'ladder' && !payback ? ' (payback anchor not set — using ladder)' : '';
@@ -325,6 +346,7 @@ export function estimateCardPrice(card: PriceCardInput, targetRarity: string, pa
     method: 'ladder',
     ratingNeeded,
     rateUsed: rate.mid,
+    ...(pcb ? { perCardBasis: pcb } : {}),
   };
 }
 
@@ -342,11 +364,12 @@ export function estimateUpgradeCost(
     price: round(need * rate.mid),
     low: round(need * rate.low),
     high: round(need * rate.high),
-    basis: `${fmt(need)} more rating (${fromRarity} -> ${toRarity}) x ${rate.mid.toFixed(1)} Rax/rating`,
+    basis: `${fmt(need)} more rating (${fromRarity} -> ${toRarity}) x ${rate.mid.toFixed(1)} Rax/rating${rate.perCardBasis ? ` [${rate.perCardBasis}]` : ''}`,
     confidence: 'inferred',
     method: 'ladder',
     ratingNeeded: need,
     rateUsed: rate.mid,
+    ...(rate.perCardBasis ? { perCardBasis: rate.perCardBasis } : {}),
   };
 }
 

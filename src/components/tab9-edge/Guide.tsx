@@ -154,8 +154,20 @@ export default function Guide({ cfg, example }: { cfg: Cfg; example: GuideExampl
                 <li>Exchange liquidity: a Kalshi/Polymarket price with little volume is weak evidence; the consensus down-weights it (see the vol column).</li>
                 <li>Soccer moneylines are 3-way (home / draw / away, 90 minutes). If Real has no draw option, use “Draw no bet” in the editor.</li>
                 <li>Start times marked “≈” are approximate (only the date is known) — confirm kick-off before relying on a line.</li>
-                <li>DraftKings (via ESPN) appears only about a day ahead; FanDuel is not available (no public API).</li>
+                <li>DraftKings (via ESPN) appears only about a day ahead. FanDuel has no public API, so it is only here if you import it yourself (next section).</li>
               </ul>
+              <div className="mt-3 text-sm font-semibold text-head">Optional: FanDuel, DraftKings and Real’s own % from RaxEdge</div>
+              <div className="mt-1 space-y-1.5 text-sm leading-relaxed text-muted">
+                <p>
+                  If you have a RaxEdge account you can copy an export from its site in your own browser and paste it in under “Optional: use my RaxEdge export”. It is saved only in this browser. Two switches then become available — <B>both are off by default</B> and nothing changes until you turn one on.
+                </p>
+                <p>
+                  <B>FanDuel &amp; DraftKings lines</B> add two columns and join the consensus like any sportsbook (vig removed). The export is a <i>snapshot</i>: lines move in minutes, so check the “export taken” age (amber after 15 min, red after an hour) and re-run the export before trusting a number. DraftKings here is the same book as the ESPN column, so it is only counted where ESPN has no line for that market. A free RaxEdge plan covers most leagues; things like FanDuel soccer need Pro and are listed as skipped.
+                </p>
+                <p>
+                  <B>Auto-fill Real %</B> uses Real’s own market numbers from the export and fills only the sides you have not typed (what you type always wins). It only works for markets that have a number to read — games in play, or pre-game markets after Real’s pool opens (before that the entry is empty) — and Real’s NHL, college-football, UFC and soccer markets need RaxEdge Pro. Locked or settled markets are ignored. A filled value is labelled “from RaxEdge” with its age. It is a copy of someone else’s number from minutes ago: <B>always sanity-check the % in Real before you bet</B>, because Real’s percentages move as the pool fills.
+                </p>
+              </div>
             </div>
           </div>
         </div>

@@ -1,3 +1,7 @@
+# Importing from RaxEdge (the bridge)
+
+> **v2 (current):** one export from your own RaxEdge session now carries three optional sections — your OTD passes (Tabs 7–8), FanDuel/DraftKings lines + Real's live market % (Tab 9), and pack odds (Tab 7 pricing). Contract, plan limits and the snippet live in `shared/raxedgeBridge.ts`; the import UI is `src/components/raxedge/BridgeImport.tsx`; imported odds/pack data live in this browser only (`src/lib/raxedgeStore.ts`). **Every feature built on it is an option that is OFF by default.** RaxEdge has no public routes (all 31 read-only data routes return 401 without a session) — this in-browser export, with @moe_'s OK, is the way. The text below describes the OTD section.
+
 # Importing your passes from RaxEdge
 
 **What it is.** RaxEdge (raxedge.com) knows every pass you own — its exact level and per-day earnings, including **team cards and UFC fighters**, which Rateboard's per-game data doesn't cover. The *My cards* view of Tab 7 can import that, so Tabs 7 and 8 work from your real set instead of an approximation.

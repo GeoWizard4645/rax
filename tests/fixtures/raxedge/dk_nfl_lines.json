@@ -1,0 +1,121 @@
+{
+ "ok": true,
+ "games": [
+  {
+   "eventId": "34118254",
+   "homeTeam": "Jacksonville Jaguars",
+   "awayTeam": "Philadelphia Eagles",
+   "homeShort": "JAX",
+   "awayShort": "PHI",
+   "time": "9:30 AM",
+   "startMs": 1791725400000,
+   "markets": [
+    {
+     "eventId": "34118254",
+     "homeTeam": "Jacksonville Jaguars",
+     "awayTeam": "Philadelphia Eagles",
+     "homeShort": "JAX",
+     "awayShort": "PHI",
+     "time": "9:30 AM",
+     "startMs": 1791725400000,
+     "market": "team_ml",
+     "stat": "Moneyline",
+     "homeOdds": -410,
+     "awayOdds": 320,
+     "marketId": "1_34118254"
+    },
+    {
+     "eventId": "34118254",
+     "homeTeam": "Jacksonville Jaguars",
+     "awayTeam": "Philadelphia Eagles",
+     "homeShort": "JAX",
+     "awayShort": "PHI",
+     "time": "9:30 AM",
+     "startMs": 1791725400000,
+     "market": "team_runline",
+     "stat": "Spread",
+     "homeOdds": -112,
+     "awayOdds": -108,
+     "homeLine": -7.5,
+     "awayLine": 7.5,
+     "marketId": "2_34118254"
+    },
+    {
+     "eventId": "34118254",
+     "homeTeam": "Jacksonville Jaguars",
+     "awayTeam": "Philadelphia Eagles",
+     "homeShort": "JAX",
+     "awayShort": "PHI",
+     "time": "9:30 AM",
+     "startMs": 1791725400000,
+     "market": "team_total",
+     "stat": "Total Points",
+     "line": 41.5,
+     "overOdds": -112,
+     "underOdds": -108,
+     "marketId": "3_34118254"
+    }
+   ],
+   "fetchedAt": 1791692858
+  },
+  {
+   "eventId": "34118195",
+   "homeTeam": "Miami Dolphins",
+   "awayTeam": "Cincinnati Bengals",
+   "homeShort": "MIA",
+   "awayShort": "CIN",
+   "time": "1:00 PM",
+   "startMs": 1791738000000,
+   "markets": [
+    {
+     "eventId": "34118195",
+     "homeTeam": "Miami Dolphins",
+     "awayTeam": "Cincinnati Bengals",
+     "homeShort": "MIA",
+     "awayShort": "CIN",
+     "time": "1:00 PM",
+     "startMs": 1791738000000,
+     "market": "team_ml",
+     "stat": "Moneyline",
+     "homeOdds": 280,
+     "awayOdds": -355,
+     "marketId": "1_34118195"
+    },
+    {
+     "eventId": "34118195",
+     "homeTeam": "Miami Dolphins",
+     "awayTeam": "Cincinnati Bengals",
+     "homeShort": "MIA",
+     "awayShort": "CIN",
+     "time": "1:00 PM",
+     "startMs": 1791738000000,
+     "market": "team_runline",
+     "stat": "Spread",
+     "homeOdds": -110,
+     "awayOdds": -110,
+     "homeLine": 7,
+     "awayLine": -7,
+     "marketId": "2_34118195"
+    },
+    {
+     "eventId": "34118195",
+     "homeTeam": "Miami Dolphins",
+     "awayTeam": "Cincinnati Bengals",
+     "homeShort": "MIA",
+     "awayShort": "CIN",
+     "time": "1:00 PM",
+     "startMs": 1791738000000,
+     "market": "team_total",
+     "stat": "Total Points",
+     "line": 43.5,
+     "overOdds": -112,
+     "underOdds": -108,
+     "marketId": "3_34118195"
+    }
+   ],
+   "fetchedAt": 1791692858
+  }
+ ],
+ "count": 2,
+ "ts": 1791692858
+}

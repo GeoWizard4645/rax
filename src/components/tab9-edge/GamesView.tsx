@@ -1,15 +1,17 @@
 import { useMemo, useState } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
-import { ODDS_SOURCE_LABEL, ODDS_SPORTS, type OddsEvent, type OddsSport } from '../../../shared/odds';
+import { ODDS_SOURCE_LABEL, ODDS_SPORTS, type OddsEvent, type OddsSource, type OddsSport } from '../../../shared/odds';
+import type { RealPctSuggestion } from '../../../shared/oddsRaxEdge';
 import type { SportOdds } from '../../hooks/useOdds';
 import { slug } from '../../lib/format';
 import { Loading } from '../ui/StateBlock';
-import MarketRow, { RowHeader } from './MarketRow';
+import MarketRow, { RowHeader, SOURCE_ORDER } from './MarketRow';
 import type { EditorValue } from './MarketEditor';
 import {
   dayKey,
   dayLabel,
   emptyReason,
+  findAuto,
   linesOf,
   lookupEntry,
   marketTypes,
@@ -33,6 +35,8 @@ const STATE_UI: Record<SourceState, { cls: string; text: string }> = {
   skipped: { cls: 'chip-muted', text: 'n/a' },
 };
 
+const chipLabel = (s: OddsSource) => (s === 'draftkings' ? 'DK · RaxEdge' : s === 'fanduel' ? 'FanDuel · RaxEdge' : ODDS_SOURCE_LABEL[s].replace(' (via ESPN)', ''));
+
 /** Per-source status chips (ok / error / no markets), last-updated and refresh. */
 export function StatusBar({ st, now, onReload, sport }: { st: SportOdds; now: number; onReload: () => void; sport: OddsSport }) {
   const ago = st.fetchedAt ? Math.max(0, Math.round((now - st.fetchedAt) / 1000)) : null;
@@ -43,7 +47,7 @@ export function StatusBar({ st, now, onReload, sport }: { st: SportOdds; now: nu
         const u = STATE_UI[sourceState(s)];
         return (
           <span key={s.source} className={u.cls} title={s.error ?? `${s.count} market${s.count === 1 ? '' : 's'}`}>
-            {ODDS_SOURCE_LABEL[s.source].replace(' (via ESPN)', '')} · {u.text}
+            {chipLabel(s.source)} · {u.text}
             {sourceState(s) === 'ok' || sourceState(s) === 'partial' ? <span className="num"> · {s.count}</span> : null}
           </span>
         );
@@ -73,6 +77,8 @@ export default function GamesView({
   openKey,
   setOpenKey,
   onReload,
+  cols = SOURCE_ORDER,
+  suggestions = [],
 }: {
   sport: OddsSport;
   onSport: (s: OddsSport) => void;
@@ -84,6 +90,10 @@ export default function GamesView({
   openKey: string | null;
   setOpenKey: (k: string | null) => void;
   onReload: () => void;
+  /** Source columns to show (adds FanDuel / DraftKings when the user switched them on). */
+  cols?: OddsSource[];
+  /** Real's own market % from the user's RaxEdge export; empty unless the auto-fill option is on. */
+  suggestions?: RealPctSuggestion[];
 }) {
   const st = bySport[sport] ?? { data: null, error: null, loading: true, fetchedAt: null };
   const [q, setQ] = useState('');
@@ -156,7 +166,7 @@ export default function GamesView({
 
       {groups.length > 0 && (
         <div className="panel overflow-hidden">
-          <RowHeader />
+          <RowHeader cols={cols} />
           {groups.map(([key, evs]) => (
             <section key={key} aria-label={dayLabel(key)}>
               <h3 className="border-b border-line bg-base/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted">{dayLabel(key)}</h3>
@@ -173,7 +183,7 @@ export default function GamesView({
                       {e.status === 'live' && <span className="chip-amber" title="In play — lines move fast and Real’s % may be stale">LIVE</span>}
                     </header>
                     {types.map((t) => {
-                      const lines = linesOf(e, t, cfg.devig);
+                      const lines = linesOf(e, t, cfg.devig, cfg.include);
                       const oid = openId(e, t);
                       const withEntry = lines.find((l) => lookupEntry(store, e, t, l));
                       const chosen = lineSel[oid];
@@ -192,6 +202,9 @@ export default function GamesView({
                           onToggle={() => setOpenKey(openKey === oid ? null : oid)}
                           onSave={(v) => onSave(e, t, line, v)}
                           anchorId={anchorOf(e, t)}
+                          cols={cols}
+                          auto={t === 'moneyline' && suggestions.length ? findAuto(suggestions, e) : null}
+                          now={now}
                         />
                       );
                     })}

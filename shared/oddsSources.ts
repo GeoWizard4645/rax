@@ -947,7 +947,7 @@ export const MATCH_TOL_EXACT_MS = 3 * 3600_000;
 /** Kalshi starts for pro leagues are derived (occurrence − typical duration), so they get a wider window. */
 export const MATCH_TOL_APPROX_MS = 5 * 3600_000;
 
-const SOURCE_RANK: Record<OddsSource, number> = { 'espn-dk': 0, polymarket: 1, kalshi: 2 };
+const SOURCE_RANK: Record<OddsSource, number> = { 'espn-dk': 0, polymarket: 1, kalshi: 2, draftkings: 3, fanduel: 4 }; // the last two never reach matchEvents (client-side merge only)
 
 interface Cluster {
   sport: OddsSport;

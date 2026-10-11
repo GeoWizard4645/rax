@@ -1,15 +1,17 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { RARITIES, RARITY_MULT, fmtRax } from '../../../shared/formulas';
-import { planDay, type OwnedCard } from '../../../shared/otd';
+import { buildCalendar } from '../../../shared/otdEfficiency';
+import type { OtdSport } from '../../../shared/otdSnapshot';
 import { bestOfferFor, owedFor, RB_SPORTS, type RbSport } from '../../../shared/rateboard';
 import { findFighter } from '../../../shared/ufc';
 import { useRbBoard } from '../../hooks/useRbBoard';
 import { useUfc } from '../../hooks/useUfc';
-import { useCardGames } from '../../hooks/useRax';
 import UfcChip from '../ui/UfcChip';
 import { useCollections } from '../../hooks/useRealUser';
-import { useOTDCalendar, localMonthDay } from '../../hooks/useOTDCalendar';
+import { buildLevels, effParams, withCustom } from '../tab7-efficiency/model';
+import { useEffState } from '../tab7-efficiency/useEffState';
+import { useOtdSnapshot } from '../tab7-efficiency/useOtdSnapshot';
 import { load, save } from '../../lib/storage';
 import type { Rarity } from '../../types/real';
 import { Empty, Spinner } from '../ui/StateBlock';
@@ -35,18 +37,20 @@ const rowId = (sport: string, name: string) => `${sport}|${name.toLowerCase()}`;
 
 /**
  * Daily earnings audit. Holdings come from the collection pull (or are typed in), each with a rarity-tier
- * adjuster. OTD earnings are computed for real from the OTD dataset and your Tab 4 cards. Live-game earnings
+ * adjuster. OTD earnings are computed for real from the OTD dataset and the cards you own in Tab 7 (My cards). Live-game earnings
  * need a per-game base yield that no feed supplies here, so you enter it per card from the app.
  */
 export default function EarningsAudit() {
   const col = useCollections();
-  const otd = useOTDCalendar();
+  const { s: eff } = useEffState();
+  const snap = useOtdSnapshot('observed');
   const { board } = useRbBoard();
   const ufc = useUfc(true);
   const [input, setInput] = useState('');
   const [rows, setRows] = useState<Row[]>(() => load<Row[]>(KEY, []));
   const [defaultRarity, setDefaultRarity] = useState<Rarity>('Common');
-  const md = localMonthDay();
+  const now = new Date();
+  const md = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   const persist = (r: Row[]) => (setRows(r), save(KEY, r));
 
@@ -62,14 +66,20 @@ export default function EarningsAudit() {
   };
   const patch = (id: string, p: Partial<Row>) => persist(rows.map((r) => (r.id === id ? { ...r, ...p } : r)));
 
-  const owned = useMemo(() => load<OwnedCard[]>('rax_otd_owned_v1', []), []);
-  const ownedGames = useCardGames(owned, otd.source === 'live');
-  const allGames = useMemo(() => {
-    if (!ownedGames.data?.length) return otd.games;
-    const seen = new Set(otd.games.map((g) => g.id));
-    return [...otd.games, ...ownedGames.data.filter((g) => !seen.has(g.id))];
-  }, [otd.games, ownedGames.data]);
-  const plan = useMemo(() => planDay(owned, allGames, md, otd.sportMult), [owned, allGames, otd.sportMult, md]);
+  // OTD claims for today from the cards owned in Tab 7 / Tab 8 (2 guaranteed claims per sport, levels as held).
+  const ownedIds = useMemo(() => Object.keys(eff.ownedLevels), [eff.ownedLevels]);
+  const plan = useMemo(() => {
+    const all = snap.data ? withCustom(snap.data.cards, eff.customCards) : [];
+    const have = new Set(ownedIds);
+    const cards = all.filter((c) => have.has(c.id));
+    if (!cards.length) return { claimableTotal: 0, leftOnTable: 0 };
+    const sports = new Set<OtdSport>(cards.map((c) => c.sport));
+    const levels = buildLevels(cards, eff);
+    const start = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const cal = buildCalendar(cards, effParams(eff, levels, sports, { start, days: 1 }));
+    return { claimableTotal: cal.reduce((n, c) => n + c.claimed, 0), leftOnTable: cal.reduce((n, c) => n + c.wasted, 0) };
+  }, [snap.data, eff, ownedIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  const owned = ownedIds;
   const live = rows.reduce((n, r) => n + r.liveBase * RARITY_MULT[r.rarity] * r.copies, 0);
   const total = live + plan.claimableTotal;
   const offers = useMemo(() => new Map(rows.map((r) => [r.id, board ? bestOfferFor(board, r.sport, r.name) : null])), [rows, board]);
@@ -79,7 +89,7 @@ export default function EarningsAudit() {
   return (
     <div className="space-y-4">
       <Explain title="What this can and can't see">
-        <p>Today's earnings = <b className="text-head">live-game yield</b> (per card, × rarity tier × copies) + <b className="text-head">OTD claims</b> (your top 2 per sport from Tab 4's cards, computed from the OTD dataset).</p>
+        <p>Today's earnings = <b className="text-head">live-game yield</b> (per card, × rarity tier × copies) + <b className="text-head">OTD claims</b> (your top 2 per sport from the cards you own in Tab 7, computed from the OTD dataset).</p>
         <p>Real doesn't publish another player's per-game Rax, so the audit can't be run blind on any username: pulling a username fills in their holdings, and you enter each card's live-game base yield from the app. The rarity adjuster then applies the tier multipliers: {RARITIES.map((r) => `${r} ${RARITY_MULT[r].toFixed(1)}×`).join(' · ')}.</p>
       </Explain>
 
@@ -101,7 +111,7 @@ export default function EarningsAudit() {
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <Stat label="Total today" value={fmtRax(total)} sub="Rax" tone="emerald" />
         <Stat label="Live games" value={fmtRax(live)} sub={`${rows.filter((r) => r.liveBase > 0).length} cards playing`} tone="blue" />
-        <Stat label="OTD claims" value={fmtRax(plan.claimableTotal)} sub={owned.length ? `top 2/sport · ${md}` : 'add cards in Tab 4'} tone="amber" />
+        <Stat label="OTD claims" value={fmtRax(plan.claimableTotal)} sub={owned.length ? `top 2/sport · ${md}` : 'add cards in Tab 7 → My cards'} tone="amber" />
         <Stat label="OTD left on table" value={fmtRax(plan.leftOnTable)} sub="outside the top 2" />
         <Stat label="Rateboard haul" value={fmtRax(rbHaul)} sub={board ? 'sell every priced card at its best live offer' : 'board unavailable'} tone="blue" />
       </div>

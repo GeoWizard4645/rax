@@ -6,6 +6,7 @@ import type { Rarity, Sport } from '../src/types/real';
 import type {
   CatalystTag,
   FairValuePoint,
+  MarketSport,
   PlayerSeries,
   SeriesPoint,
   SpikeRow,
@@ -223,7 +224,7 @@ export interface FairValueResult {
  * least 15% under the fair price (so a tight cloud can't flag trivial gaps).
  */
 export function fairValue(
-  items: Array<{ key: string; playerName: string; sport: Sport; rating: number; medianPrice: number }>,
+  items: Array<{ key: string; playerName: string; sport: MarketSport; rating: number; medianPrice: number }>,
 ): FairValueResult {
   const regression = linearRegression(items.map((i) => ({ x: i.rating, y: i.medianPrice })));
   const points = items.map((i): FairValuePoint => {

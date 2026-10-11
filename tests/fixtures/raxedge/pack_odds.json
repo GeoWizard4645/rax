@@ -1,0 +1,114 @@
+{
+ "players": [
+  {
+   "updatedAt": 1790062144,
+   "id": "9038",
+   "name": "Matthew Stafford",
+   "position": "QB",
+   "sport": "nfl",
+   "season": "2025",
+   "counts": {
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 4,
+    "5": 3
+   },
+   "total": 7,
+   "avgCardValue": 8.54,
+   "odds": {
+    "legendary": 81.34,
+    "epic": 18.66,
+    "rare": 0
+   }
+  },
+  {
+   "updatedAt": 1790062968,
+   "id": "19766",
+   "name": "Saquon Barkley",
+   "position": "RB",
+   "sport": "nfl",
+   "season": "2023",
+   "counts": {
+    "1": 9,
+    "2": 13,
+    "3": 9,
+    "4": 6,
+    "5": 0
+   },
+   "total": 37,
+   "avgCardValue": 3.73,
+   "odds": {
+    "legendary": 0,
+    "epic": 41.19,
+    "rare": 58.81
+   }
+  },
+  {
+   "updatedAt": 1790062747,
+   "id": "18877",
+   "name": "Christian McCaffrey",
+   "position": "RB",
+   "sport": "nfl",
+   "season": "2025",
+   "counts": {
+    "1": 22,
+    "2": 14,
+    "3": 5,
+    "4": 0,
+    "5": 0
+   },
+   "total": 41,
+   "avgCardValue": 3.51,
+   "odds": {
+    "legendary": 0,
+    "epic": 0,
+    "rare": 100
+   }
+  },
+  {
+   "updatedAt": 1790063801,
+   "id": "24172",
+   "name": "Puka Nacua",
+   "position": "WR",
+   "sport": "nfl",
+   "season": "2025",
+   "counts": {
+    "1": 15,
+    "2": 6,
+    "3": 3,
+    "4": 0,
+    "5": 0
+   },
+   "total": 24,
+   "avgCardValue": 3.46,
+   "odds": {
+    "legendary": 0,
+    "epic": 0,
+    "rare": 100
+   }
+  },
+  {
+   "updatedAt": 1790078089,
+   "id": "11400",
+   "name": "Fentrell Cypress II",
+   "position": "DB",
+   "sport": "ncaaf",
+   "season": "2023",
+   "counts": {
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 1
+   },
+   "total": 1,
+   "avgCardValue": 7.6,
+   "odds": {
+    "legendary": 100,
+    "epic": 0,
+    "rare": 0
+   }
+  }
+ ]
+}

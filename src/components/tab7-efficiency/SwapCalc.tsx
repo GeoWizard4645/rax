@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { DEFAULT_PRICE_PARAMS, packEconomics, swapCost } from '../../../shared/otdPricing';
-import { rax } from '../../lib/format';
+import { packResaleView, type PackIndex, type PackStats } from '../../../shared/raxedgePackOdds';
+import { dec, rax } from '../../lib/format';
 import { Explain } from '../ui/Explain';
+import type { EffState } from './model';
 
 const n = (v: string) => Math.max(0, +v.replace(/[^\d.]/g, '') || 0);
 
@@ -13,8 +15,65 @@ function Field({ label, value, onChange, step }: { label: string; value: number;
   );
 }
 
+const ageText = (at: number | null) => {
+  if (!at) return 'age unknown';
+  const m = Math.round((Date.now() - at) / 60000);
+  return m < 90 ? `${Math.max(1, m)} min old` : m < 2880 ? `${Math.round(m / 60)} h old` : `${Math.round(m / 1440)} d old`;
+};
+
+/**
+ * OPTIONAL (only when RaxEdge pack odds are imported): what one Player pack for a chosen player-season is expected to add
+ * in rating, and what that implies per rating point. The resale line is an ESTIMATE using a standing-bid rate.
+ */
+function PackRatingPanel({ pack, packAt, defaultPack, defaultRate, feePct }: { pack: PackIndex; packAt: number | null; defaultPack: number; defaultRate: number; feePct: number }) {
+  const [q, setQ] = useState('');
+  const [sel, setSel] = useState('');
+  const [price, setPrice] = useState(defaultPack);
+  const [mkt, setMkt] = useState(defaultRate);
+  const all = useMemo(() => [...pack.values()].sort((a, b) => a.name.localeCompare(b.name) || b.season.localeCompare(a.season)), [pack]);
+  const matches = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return (t ? all.filter((x) => x.name.toLowerCase().includes(t)) : all).slice(0, 60);
+  }, [all, q]);
+  const keyOf = (x: PackStats) => `${x.sport}|${x.season}|${x.id}`;
+  const st = all.find((x) => keyOf(x) === sel) ?? matches[0];
+  const r = st ? packResaleView(st, { packPrice: price, marketRate: mkt, fee: feePct / 100 }) : null;
+  return (
+    <div className="panel">
+      <div className="panel-hd flex-wrap"><h2>Expected rating per pack</h2><span className="chip-blue">from your RaxEdge import · {all.length.toLocaleString()} rows · {ageText(packAt)}</span></div>
+      <div className="panel-bd space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <input className="field !w-40" placeholder="Search player…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search pack-odds player" />
+          <select className="field !w-64 max-w-full" value={st ? keyOf(st) : ''} onChange={(e) => setSel(e.target.value)} aria-label="Player season">
+            {matches.map((x) => <option key={keyOf(x)} value={keyOf(x)}>{x.name} · {x.sport.toUpperCase()} {x.season} · {x.position}</option>)}
+          </select>
+        </div>
+        {st && r ? (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-muted">Average card rating</span><span className="num">{dec(st.avgCardValue)}</span></div>
+                <div className="flex justify-between"><span className="text-muted">Expected rating per pack (× 3)</span><span className="num font-semibold text-emerald">{dec(st.expectedRatingPerPack)}</span></div>
+                <div className="flex justify-between"><span className="text-muted">Tier odds</span><span className="num">legendary {dec(st.tierOdds.legendary, 0)}% · epic {dec(st.tierOdds.epic, 0)}% · rare {dec(st.tierOdds.rare, 0)}%</span></div>
+                <div className="flex justify-between"><span className="text-muted">Cards sampled</span><span className={`num ${st.sample < 5 ? 'text-amber' : ''}`}>{st.sample}{st.sample < 5 ? ' (small sample)' : ''}</span></div>
+              </div>
+              <div className="space-y-1 text-sm">
+                <Field label="Pack price" value={price} onChange={setPrice} />
+                <Field label="Resale rate (Rax/rating)" value={mkt} onChange={setMkt} step={0.5} />
+                <div className="flex justify-between"><span className="text-muted">Implied Rax per rating (keep cards)</span><span className="num font-semibold">{dec(r.grossRate, 1)}</span></div>
+                <div className="flex justify-between"><span className="text-muted">Estimate: net cost per rating if you resell</span><span className="num">{dec(r.netCostPerRating, 1)}</span></div>
+              </div>
+            </div>
+            <p className="hint">Keep-the-cards figure = pack price ÷ expected rating. Resale estimate: selling the pulled cards at {dec(mkt, 1)} Rax/rating (a standing-bid rate, not an observed sale) less the {feePct.toFixed(0)}% fee recovers ≈ {rax(r.recovered)}, a net pack cost of ≈ {rax(r.netPackCost)}. That is the spread lost on a round trip, not the cost of owning rating. Pulls are random; booster cards ignored.</p>
+          </>
+        ) : <p className="hint">No rows match.</p>}
+      </div>
+    </div>
+  );
+}
+
 /** Pack swap and "N back" calculators, from the Rax Academy posts. Both are normally Pro-only. */
-export default function SwapCalc() {
+export default function SwapCalc({ packOdds, packAt, s }: { packOdds?: PackIndex; packAt?: number | null; s?: Pick<EffState, 'packPrice' | 'rate'> }) {
   const pp = DEFAULT_PRICE_PARAMS;
   const [pack, setPack] = useState(pp.pack.swapPackPrice.value);
   const [sent, setSent] = useState(410);
@@ -76,6 +135,7 @@ export default function SwapCalc() {
         </div>
         <p className="hint px-3 pb-3">Pack economics: {eco.explanation}</p>
       </div>
+      {packOdds && packOdds.size > 0 && <PackRatingPanel pack={packOdds} packAt={packAt ?? null} defaultPack={s?.packPrice ?? pp.pack.playerPackPrice.value} defaultRate={s?.rate ?? pp.ratePerRating.mid.value} feePct={fee} />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Empty } from '../ui/StateBlock';
-import { MARKET_LABEL, agreement, fmtNum, fmtP, fmtSigned, startText, type BoardRow } from './edgeLogic';
+import { MARKET_LABEL, agreement, fmtAge, fmtNum, fmtP, fmtSigned, startText, type BoardRow } from './edgeLogic';
 
 /** Best EV across every game that has a Real % entered, sorted by EV. */
 export default function BestBoard({
@@ -23,7 +23,7 @@ export default function BestBoard({
   return (
     <div className="panel">
       <div className="panel-hd">
-        <h2>Best EV — games with a Real % entered</h2>
+        <h2>Best EV — games with a Real % {rows.some((r) => r.auto) ? 'entered or from RaxEdge' : 'entered'}</h2>
         <label className="flex items-center gap-1.5 text-xs text-muted">
           <input type="checkbox" checked={onlyPos} onChange={(e) => setOnlyPos(e.target.checked)} /> +EV only
         </label>
@@ -66,7 +66,7 @@ export default function BestBoard({
                       {r.line !== null && <span className="num text-muted"> {r.type === 'spread' && r.line > 0 ? '+' : ''}{r.line}</span>} · <b className="text-head">{r.side.label}</b>
                     </td>
                     <td className="r num">{fmtP(r.side.fair)}</td>
-                    <td className="r num">{fmtNum(r.eval.realPct, 1)}%</td>
+                    <td className="r num">{fmtNum(r.eval.realPct, 1)}%{r.auto && <span className="chip-blue ml-1.5" title="Real's own number from your RaxEdge export, not something you typed — re-check it in Real before betting">RaxEdge · {fmtAge(Date.now() - r.auto.s.ts)}</span>}</td>
                     <td className={`r num ${r.eval.edgePp > 0 ? 'text-emerald' : 'text-danger'}`}>{fmtSigned(r.eval.edgePp, 1, ' pp')}</td>
                     <td className={`r num text-base font-semibold ${r.eval.ev > 0 ? 'text-emerald' : 'text-danger'}`}>{fmtSigned(r.eval.ev, 1, '%')}</td>
                     <td className="r num">{r.eval.stake > 0 ? r.eval.stake.toLocaleString('en-US') : '—'}</td>

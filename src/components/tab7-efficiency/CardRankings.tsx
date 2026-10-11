@@ -31,6 +31,7 @@ export default function CardRankings({
   overrides,
   onOverride,
   priceNote,
+  packPriced,
   owned,
   onToggleOwned,
   limit = 500,
@@ -39,6 +40,8 @@ export default function CardRankings({
   overrides: Record<string, number>;
   onOverride: (id: string, price: number | null) => void;
   priceNote: (r: CardRow) => string;
+  /** True for cards whose price used a per-player rate from RaxEdge pack odds (shows a chip). */
+  packPriced?: (id: string) => boolean;
   owned: ReadonlySet<string>;
   onToggleOwned: (id: string) => void;
   limit?: number;
@@ -108,6 +111,7 @@ export default function CardRankings({
                     <td className="r num font-semibold text-emerald">{rax(r.windowEarn)}</td>
                     <td className="r num">{rax(r.annualEarn)}</td>
                     <td className="r">
+                      {packPriced?.(r.card.id) && ov == null && <span className="chip-blue mr-1" title={`Priced with this player's own rate from RaxEdge pack odds. ${priceNote(r)}`}>pack</span>}
                       <input
                         className={`field num !w-24 !py-0.5 text-right ${ov != null ? 'border-action' : ''}`}
                         inputMode="numeric"

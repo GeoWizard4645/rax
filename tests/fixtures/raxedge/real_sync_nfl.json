@@ -1,0 +1,14 @@
+{
+ "ok": true,
+ "markets": {
+  "Eagles @ Jaguars": {},
+  "Eagles @ Jaguars__gid": 19518,
+  "Eagles @ Jaguars__sport": "nfl",
+  "Eagles @ Jaguars__startMs": 1791725400000,
+  "Bears @ Packers": {},
+  "Bears @ Packers__gid": 19529,
+  "Bears @ Packers__sport": "nfl",
+  "Bears @ Packers__startMs": 1791738000000
+ },
+ "syncedAt": 1791692899
+}

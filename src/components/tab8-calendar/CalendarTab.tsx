@@ -5,6 +5,8 @@ import { buildCalendar, buildPortfolio, payoutScale, sportCeilings, type DayCell
 import { OTD_SPORTS, type OtdCardRecord, type OtdSport } from '../../../shared/otdSnapshot';
 import { rax } from '../../lib/format';
 import { Loading } from '../ui/StateBlock';
+import { buildPackIndex } from '../../../shared/raxedgePackOdds';
+import { useRaxEdge } from '../../lib/raxedgeStore';
 import { buildLevels, effParams, withCustom } from '../tab7-efficiency/model';
 import MultiYearPanel from './MultiYearPanel';
 import { useEffState } from '../tab7-efficiency/useEffState';
@@ -39,7 +41,9 @@ export default function CalendarTab() {
   const available = useMemo(() => [...new Set((all ?? []).map((c) => c.sport))].sort((a, b) => OTD_SPORTS.indexOf(a) - OTD_SPORTS.indexOf(b)), [all]);
   const sportsOn = useMemo(() => new Set<OtdSport>(sportsSel.length ? sportsSel : available), [sportsSel, available]);
   const byId = useMemo(() => new Map((all ?? []).map((c) => [c.id, c])), [all]);
-  const levels = useMemo(() => buildLevels(all ?? [], s), [all, s.rarity, s.autoMin, s.multOverride, s.rate, s.overrides, s.ownedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
+  const stored = useRaxEdge();
+  const packIndex = useMemo(() => buildPackIndex(stored.packOdds?.players), [stored.packOdds]);
+  const levels = useMemo(() => buildLevels(all ?? [], s, s.usePackRates ? packIndex : null), [all, s.rarity, s.autoMin, s.multOverride, s.rate, s.overrides, s.ownedLevels, s.usePackRates, s.packPrice, packIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const start = useMemo(() => new Date(Date.UTC(year, month - 1, 1)), [year, month]);

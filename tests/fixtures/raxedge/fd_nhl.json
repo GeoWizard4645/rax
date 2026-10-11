@@ -1,0 +1,58 @@
+{
+ "ok": true,
+ "games": {
+  "Los Angeles Kings @ Vegas Golden Knights": {
+   "id": 36171817,
+   "away": "Los Angeles Kings",
+   "home": "Vegas Golden Knights",
+   "cm": "2026-10-11T02:09:00.000Z",
+   "spreads": {
+    "Los Angeles Kings": {
+     "1.5": -1000
+    },
+    "Vegas Golden Knights": {
+     "-1.5": 550
+    }
+   },
+   "totals": {
+    "Over": {
+     "3.5": 154
+    },
+    "Under": {
+     "3.5": -205
+    }
+   },
+   "ml": {
+    "Los Angeles Kings": 102,
+    "Vegas Golden Knights": -130
+   }
+  },
+  "Seattle Kraken @ Washington Capitals": {
+   "id": 36172723,
+   "away": "Seattle Kraken",
+   "home": "Washington Capitals",
+   "cm": "2026-10-11T21:00:00.000Z",
+   "spreads": {
+    "Seattle Kraken": {
+     "1.5": -142
+    },
+    "Washington Capitals": {
+     "-1.5": 116
+    }
+   },
+   "totals": {
+    "Over": {
+     "6.5": 102
+    },
+    "Under": {
+     "6.5": -124
+    }
+   },
+   "ml": {
+    "Seattle Kraken": 180,
+    "Washington Capitals": -220
+   }
+  }
+ },
+ "ts": 1791692896
+}

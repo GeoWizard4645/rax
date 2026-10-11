@@ -11,7 +11,6 @@ import { Loading } from './components/ui/StateBlock';
 const RateboardTab = lazy(() => import('./components/tab1-rateboard/RateboardTab'));
 const ScoutTab = lazy(() => import('./components/tab2-scout/ScoutTab'));
 const VolatilityTab = lazy(() => import('./components/tab3-volatility/VolatilityTab'));
-const OtdTab = lazy(() => import('./components/tab4-otd/OtdTab'));
 const PortfolioTab = lazy(() => import('./components/tab5-portfolio/PortfolioTab'));
 const QuadsTab = lazy(() => import('./components/tab6-quads/QuadsTab'));
 const EfficiencyTab = lazy(() => import('./components/tab7-efficiency/EfficiencyTab'));
@@ -32,7 +31,7 @@ export default function App() {
               <Route path="/rateboard" element={<RateboardTab />} />
               <Route path="/scout" element={<ScoutTab />} />
               <Route path="/volatility" element={<VolatilityTab />} />
-              <Route path="/otd" element={<OtdTab />} />
+              <Route path="/otd" element={<Navigate to="/efficiency" replace />} />
               <Route path="/portfolio" element={<PortfolioTab />} />
               <Route path="/quads" element={<QuadsTab />} />
               <Route path="/efficiency" element={<EfficiencyTab />} />

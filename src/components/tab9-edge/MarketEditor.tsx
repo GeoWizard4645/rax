@@ -7,6 +7,7 @@ import { NumInput } from './fields';
 import {
   evalMarket,
   evalSide,
+  fmtAge,
   fmtNum,
   fmtP,
   fmtSigned,
@@ -16,6 +17,8 @@ import {
   sensRows,
   sideFairs,
   sourceSideFair,
+  withAuto,
+  type AutoReal,
   type Cfg,
   type Found,
   type SideIdx,
@@ -33,11 +36,15 @@ const evTone = (x: number) => (x > 0 ? 'text-emerald' : 'text-danger');
  * Inline editor under a market row: type Real’s % for each side → EV, edge, break-even, Kelly stake, a sensitivity table and the
  * per-source breakdown.
  */
-export default function MarketEditor({ event, c, found, cfg, onChange }: { event: OddsEvent; c: Consensus; found: Found | null; cfg: Cfg; onChange: (v: EditorValue) => void }) {
+export default function MarketEditor({ event, c, found, auto = null, now = Date.now(), cfg, onChange }: { event: OddsEvent; c: Consensus; found: Found | null; auto?: AutoReal | null; now?: number; cfg: Cfg; onChange: (v: EditorValue) => void }) {
   const three = hasDraw(c);
   const [dnb, setDnb] = useState(found?.dnb ?? false);
+  // `val` is only what the user TYPED — it is what gets saved. RaxEdge's numbers (`eff`) are used for display and EV, and are never written back.
   const val: EditorValue = { p: found?.p ?? [null, null], d: dnb ? null : found?.d ?? null, dnb };
-  const { rows, best } = evalMarket(c, { p: val.p, d: val.d, dnb }, cfg);
+  const eff = withAuto({ p: val.p, d: val.d, dnb }, auto, three);
+  const { rows, best } = evalMarket(c, eff ?? { p: val.p, d: val.d, dnb }, cfg);
+  const typedOf = (idx: SideIdx): number | null => (idx === 2 ? val.d : val.p[idx]);
+  const autoOf = (idx: SideIdx): boolean => !!eff && (idx === 2 ? eff.autoD : eff.auto[idx]);
   const [sideSel, setSideSel] = useState<SideIdx | null>(null);
   const selRow = rows.find((r) => r.idx === sideSel && r.ev) ?? best ?? null;
 
@@ -47,8 +54,8 @@ export default function MarketEditor({ event, c, found, cfg, onChange }: { event
     else next.p[idx] = v;
     onChange(next);
   };
-  const filled = rows.filter((r) => r.real != null);
-  const fillOther = !three && filled.length === 1 && filled[0].real != null ? filled[0] : null;
+  const filled = rows.filter((r) => typedOf(r.idx) != null);
+  const fillOther = !three && filled.length === 1 && typedOf(filled[0].idx) != null ? filled[0] : null;
 
   const sens = useMemo(() => (selRow?.ev ? sensRows(selRow.fair, selRow.ev.realPct, cfg) : null), [selRow, cfg]);
   const sideLabel = (idx: SideIdx) => sideFairs(c, dnb).find((s) => s.idx === idx)?.label ?? '';
@@ -69,10 +76,10 @@ export default function MarketEditor({ event, c, found, cfg, onChange }: { event
                 Real shows
                 <NumInput
                   label={`Real percentage for ${s.label}`}
-                  value={r?.real ?? null}
+                  value={typedOf(s.idx)}
                   parse={parsePct}
                   onCommit={(v) => setSide(s.idx, v)}
-                  placeholder="e.g. 52"
+                  placeholder={autoOf(s.idx) && r?.real != null ? `${r.real} · RaxEdge` : 'e.g. 52'}
                   suffix="%"
                   className="w-28"
                   autoFocus={s.idx === 0}
@@ -95,6 +102,12 @@ export default function MarketEditor({ event, c, found, cfg, onChange }: { event
                 </dl>
               ) : (
                 <p className="hint mt-2">Type the % Real shows for this side.</p>
+              )}
+              {ev && autoOf(s.idx) && eff?.src && (
+                <p className="mt-1 text-xs text-action">
+                  <span className="chip-blue mr-1.5">from RaxEdge · {fmtAge(now - eff.src.s.ts)}</span>
+                  Real’s own number for this side ({eff.src.s.live ? 'live market' : 'pre-game market'}). Type your own value to replace it; check the % in Real before betting.
+                </p>
               )}
               {ev && <p className="hint mt-1">{ev.note}{cfg.rules.model === 'pool' && ev.stake > 0 ? ` EV at that stake: ${fmtSigned(ev.evAtStake, 2, '%')}.` : ''}</p>}
             </div>
@@ -142,7 +155,7 @@ export default function MarketEditor({ event, c, found, cfg, onChange }: { event
               <tbody>
                 {sens.rows.map((r) => (
                   <tr key={r.pct} className={r.current ? 'bg-action/10' : ''}>
-                    <td className="num">{r.pct}%{r.current && <span className="chip-blue ml-2">typed</span>}{!r.current && r.pct <= sens.breakEven && r.pct + 2 > sens.breakEven && <span className="chip-amber ml-2">break-even ≈ {fmtNum(sens.breakEven, 1)}%</span>}</td>
+                    <td className="num">{r.pct}%{r.current && <span className="chip-blue ml-2">{autoOf(selRow.idx) ? 'RaxEdge' : 'typed'}</span>}{!r.current && r.pct <= sens.breakEven && r.pct + 2 > sens.breakEven && <span className="chip-amber ml-2">break-even ≈ {fmtNum(sens.breakEven, 1)}%</span>}</td>
                     <td className={`r num ${evTone(selRow.fair * 100 - r.pct)}`}>{fmtSigned(selRow.fair * 100 - r.pct, 1, ' pp')}</td>
                     <td className="r num">×{r.multiple.toFixed(3)}</td>
                     <td className={`r num font-medium ${evTone(r.ev)}`}>{fmtSigned(r.ev, 2, '%')}</td>

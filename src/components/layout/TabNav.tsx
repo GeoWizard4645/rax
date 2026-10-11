@@ -1,23 +1,24 @@
 import { NavLink } from 'react-router-dom';
-import { Activity, CalendarClock, CalendarDays, Crosshair, Gauge, Gem, Scale, Users, Wallet } from 'lucide-react';
+import { Activity, CalendarDays, Crosshair, Gauge, Gem, Scale, Users, Wallet } from 'lucide-react';
 
 export const TABS = [
-  { to: '/rateboard', label: 'Rateboard', icon: Gem },
-  { to: '/scout', label: 'Scout', icon: Crosshair },
-  { to: '/volatility', label: 'Volatility', icon: Activity },
-  { to: '/otd', label: 'OTD Rax', icon: CalendarClock },
-  { to: '/portfolio', label: 'Portfolio', icon: Wallet },
-  { to: '/quads', label: 'Quads', icon: Users },
-  { to: '/efficiency', label: 'OTD Efficiency', icon: Gauge },
-  { to: '/calendar', label: 'OTD Calendar', icon: CalendarDays },
-  { to: '/edge', label: 'Edge / EV', icon: Scale },
+  // Numbers are fixed (not the position) so "Tab 7" etc. keep meaning the same thing; the old Tab 4 (OTD Rax) was retired —
+  // Tab 7 (OTD Efficiency) replaces it.
+  { n: 1, to: '/rateboard', label: 'Rateboard', icon: Gem },
+  { n: 2, to: '/scout', label: 'Scout', icon: Crosshair },
+  { n: 3, to: '/volatility', label: 'Volatility', icon: Activity },
+  { n: 5, to: '/portfolio', label: 'Portfolio', icon: Wallet },
+  { n: 6, to: '/quads', label: 'Quads', icon: Users },
+  { n: 7, to: '/efficiency', label: 'OTD Efficiency', icon: Gauge },
+  { n: 8, to: '/calendar', label: 'OTD Calendar', icon: CalendarDays },
+  { n: 9, to: '/edge', label: 'Edge / EV', icon: Scale },
 ] as const;
 
 export default function TabNav() {
   return (
     <nav aria-label="Main" className="sticky top-0 z-30 border-b border-line bg-base/95 backdrop-blur">
       <div className="mx-auto flex max-w-[1500px] gap-1 overflow-x-auto px-3 sm:px-4">
-        {TABS.map(({ to, label, icon: Icon }, i) => (
+        {TABS.map(({ n, to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -27,7 +28,7 @@ export default function TabNav() {
               }`
             }
           >
-            <span className="num text-[10px] text-muted">{i + 1}</span>
+            <span className="num text-[10px] text-muted">{n}</span>
             <Icon size={15} /> {label}
           </NavLink>
         ))}

@@ -19,6 +19,10 @@ export interface EdgeState {
   rules: RealRules;
   /** Typed Real % per sport|date|home|away|market|line. */
   entries: EntryStore;
+  /** Opt-in (default OFF): add FanDuel + DraftKings lines from the user's imported RaxEdge export to the games and the consensus. */
+  raxLines: boolean;
+  /** Opt-in (default OFF): fill Real % the user has not typed from Real's own market numbers in the RaxEdge export. */
+  raxAutoReal: boolean;
 }
 
 export const DEFAULT_EDGE: EdgeState = {
@@ -28,6 +32,8 @@ export const DEFAULT_EDGE: EdgeState = {
   devig: 'proportional',
   rules: DEFAULT_REAL_RULES,
   entries: {},
+  raxLines: false,
+  raxAutoReal: false,
 };
 
 const num = (x: unknown, fb: number, min = 0): number => (typeof x === 'number' && Number.isFinite(x) && x >= min ? x : fb);
@@ -54,6 +60,8 @@ function read(): EdgeState {
     devig: raw.devig === 'power' ? 'power' : 'proportional',
     rules,
     entries: pruneEntries(raw.entries && typeof raw.entries === 'object' ? raw.entries : {}),
+    raxLines: raw.raxLines === true,
+    raxAutoReal: raw.raxAutoReal === true,
   };
 }
 

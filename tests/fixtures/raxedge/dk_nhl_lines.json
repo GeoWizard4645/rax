@@ -1,0 +1,64 @@
+{
+ "ok": true,
+ "games": [
+  {
+   "eventId": "34787810",
+   "homeTeam": "Calgary Flames",
+   "awayTeam": "Anaheim Ducks",
+   "homeShort": "CGY",
+   "awayShort": "ANA",
+   "time": "10:10 PM",
+   "startMs": 1791684615000,
+   "markets": [
+    {
+     "eventId": "34787810",
+     "homeTeam": "Calgary Flames",
+     "awayTeam": "Anaheim Ducks",
+     "homeShort": "CGY",
+     "awayShort": "ANA",
+     "time": "10:10 PM",
+     "startMs": 1791684615000,
+     "market": "team_ml",
+     "stat": "Moneyline",
+     "homeOdds": 260,
+     "awayOdds": -360,
+     "marketId": "1_34787810"
+    },
+    {
+     "eventId": "34787810",
+     "homeTeam": "Calgary Flames",
+     "awayTeam": "Anaheim Ducks",
+     "homeShort": "CGY",
+     "awayShort": "ANA",
+     "time": "10:10 PM",
+     "startMs": 1791684615000,
+     "market": "team_runline",
+     "stat": "Spread",
+     "homeOdds": -188,
+     "awayOdds": 145,
+     "homeLine": 1.5,
+     "awayLine": -1.5,
+     "marketId": "2_34787810"
+    },
+    {
+     "eventId": "34787810",
+     "homeTeam": "Calgary Flames",
+     "awayTeam": "Anaheim Ducks",
+     "homeShort": "CGY",
+     "awayShort": "ANA",
+     "time": "10:10 PM",
+     "startMs": 1791684615000,
+     "market": "team_total",
+     "stat": "Total Goals",
+     "line": 6.5,
+     "overOdds": -280,
+     "underOdds": 210,
+     "marketId": "3_34787810"
+    }
+   ],
+   "fetchedAt": 1791692858
+  }
+ ],
+ "count": 1,
+ "ts": 1791692869
+}

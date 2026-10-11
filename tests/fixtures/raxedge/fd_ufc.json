@@ -1,0 +1,44 @@
+{
+ "ok": true,
+ "fights": {
+  "Merab Dvalishvili @ Petr Yan": {
+   "id": "34529768",
+   "home": "Petr Yan",
+   "away": "Merab Dvalishvili",
+   "cm": "2026-10-25T03:30:00.0000000Z",
+   "ml": {
+    "Petr Yan": -185,
+    "Merab Dvalishvili": 154
+   },
+   "totals": {
+    "Over": {
+     "4.5": -410
+    },
+    "Under": {
+     "4.5": 290
+    }
+   },
+   "mov": {
+    "home": {},
+    "away": {}
+   },
+   "eventGroup": "Sat, Oct 24"
+  },
+  "Su Young You @ Cody Chovancek": {
+   "id": "34808047",
+   "home": "Cody Chovancek",
+   "away": "Su Young You",
+   "cm": "2026-10-17T21:15:00.0000000Z",
+   "ml": {
+    "Cody Chovancek": -148,
+    "Su Young You": 124
+   },
+   "totals": {},
+   "mov": {
+    "home": {},
+    "away": {}
+   },
+   "eventGroup": "Sat, Oct 17"
+  }
+ }
+}

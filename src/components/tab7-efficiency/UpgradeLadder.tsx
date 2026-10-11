@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { capFor } from '../../../shared/otdRules';
 import { ladderPriceTable } from '../../../shared/otdPricing';
 import type { OtdCardRecord } from '../../../shared/otdSnapshot';
+import type { PackIndex } from '../../../shared/raxedgePackOdds';
 import { rax } from '../../lib/format';
 import { priceParamsFor, type EffState } from './model';
 
@@ -9,7 +10,7 @@ import { priceParamsFor, type EffState } from './model';
  * Per-card rung table: what each rarity costs (rating × rate), what it pays (min(cap, multiplier × General annual)),
  * and what each STEP up buys. Real has no upgrade fee — a card's level is the summed rating of the play cards you own for it.
  */
-export default function UpgradeLadder({ cards, s }: { cards: OtdCardRecord[]; s: EffState }) {
+export default function UpgradeLadder({ cards, s, pack }: { cards: OtdCardRecord[]; s: EffState; pack?: PackIndex | null }) {
   const sorted = useMemo(() => [...cards].sort((a, b) => b.annual - a.annual), [cards]);
   const [id, setId] = useState('');
   const [q, setQ] = useState('');
@@ -21,7 +22,7 @@ export default function UpgradeLadder({ cards, s }: { cards: OtdCardRecord[]; s:
 
   const rows = useMemo(() => {
     if (!card) return [];
-    const table = ladderPriceTable({ id: card.id, sport: card.sport, season: card.season, name: card.name, annual: card.annual, owners: card.owners }, priceParamsFor(s));
+    const table = ladderPriceTable({ id: card.id, sport: card.sport, season: card.season, name: card.name, annual: card.annual, owners: card.owners }, priceParamsFor(s, [card], pack));
     let prev: { earn: number; price: number } | null = null;
     return table.filter((r) => r.key !== 'General').map((r) => {
       const cap = capFor(r.key);
@@ -30,8 +31,9 @@ export default function UpgradeLadder({ cards, s }: { cards: OtdCardRecord[]; s:
       prev = { earn, price: r.price };
       return { ...r, cap, earn, payback: earn > 0 ? r.price / earn : Infinity, step, capped: cap != null && card.annual * r.multiplier > cap };
     });
-  }, [card, s]);
+  }, [card, s, pack]);
 
+  const packRate = rows.length && rows[0].perCardBasis ? rows[0].rateUsed ?? null : null;
   const best = rows.reduce((b, r) => (r.payback < b.payback ? r : b), rows[0]);
 
   return (
@@ -46,7 +48,7 @@ export default function UpgradeLadder({ cards, s }: { cards: OtdCardRecord[]; s:
         </div>
       </div>
       <p className="hint border-b border-line px-3 py-2">
-        Prices = 200 claim + total rating × {s.rate} Rax/rating — an <b>estimate</b> from Rateboard's standing offers, not observed sales. Fastest payback is highlighted; the last two columns show what each <i>step up</i> buys, which is where the sweet spots are (a capped rung beyond the cap point buys nothing).
+        Prices = 200 claim + total rating × {packRate != null ? <>{packRate.toFixed(1)} Rax/rating (<b>this player's pack-odds rate</b>)</> : <>{s.rate} Rax/rating</>} — an <b>estimate</b>{packRate != null ? ' from RaxEdge pack odds' : " from Rateboard's standing offers"}, not observed sales. Fastest payback is highlighted; the last two columns show what each <i>step up</i> buys, which is where the sweet spots are (a capped rung beyond the cap point buys nothing).
       </p>
       <div className="max-h-[560px] overflow-auto">
         <table className="tbl">

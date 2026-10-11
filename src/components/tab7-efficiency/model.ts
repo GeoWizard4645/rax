@@ -1,8 +1,9 @@
 /** Glue between the snapshot, Real's rarity rules and the price model: one "level" (rung + price) per card. */
 import type { EfficiencyParams } from '../../../shared/otdEfficiency';
 import { ICONIC_LEVELS, RARITY_LADDER, capFor, multiplierFor } from '../../../shared/otdRules';
-import { cloneParams, DEFAULT_PRICE_PARAMS, estimateCardPrice, type PriceEstimate, type PriceParams } from '../../../shared/otdPricing';
+import { cloneParams, DEFAULT_PRICE_PARAMS, estimateCardPrice, rateBand, type PriceEstimate, type PriceParams } from '../../../shared/otdPricing';
 import type { OtdCardRecord, OtdSport } from '../../../shared/otdSnapshot';
+import { packRateFor, type PackIndex } from '../../../shared/raxedgePackOdds';
 
 export type WindowPreset = '7' | '30' | '90' | '180' | '365' | '5y' | '10y' | 'custom';
 
@@ -35,6 +36,10 @@ export interface EffState {
   minRoi: number;
   /** Rax per rating point (Rateboard's "rate"). */
   rate: number;
+  /** OPT-IN (off by default): price each card's rating from its own RaxEdge pack odds instead of the one global rate. Needs imported pack odds. */
+  usePackRates: boolean;
+  /** Rax per Player pack, used for the pack-odds rate. */
+  packPrice: number;
   /** Per-card, per-rung price you saw in-app: id → rung → Rax. */
   overrides: Record<string, Record<string, number>>;
   /** Cards you already own, id → ladder key of the level you hold them at (free, always in the set). */
@@ -63,6 +68,8 @@ export const DEFAULT_STATE: EffState = {
   hold: 'keep',
   flipLoss: 0.1,
   rate: DEFAULT_PRICE_PARAMS.ratePerRating.mid.value,
+  usePackRates: false,
+  packPrice: DEFAULT_PRICE_PARAMS.pack.playerPackPrice.value,
   overrides: {},
   ownedLevels: {},
   customCards: [],
@@ -89,12 +96,30 @@ export interface Level {
   est: PriceEstimate;
 }
 
-export function priceParamsFor(s: EffState): PriceParams {
+/** Pack data handed to the pricing: the parsed RaxEdge index (null/empty = none imported). */
+export type PackData = PackIndex | null | undefined;
+
+/**
+ * Price parameters from UI state. With `usePackRates` ON and pack data for a card in `cards`, that card gets its own
+ * Rax-per-rating (shared/raxedgePackOdds.ts) via `rateByCard`; every other card, and everything when the option is off or no
+ * data is imported, is priced exactly as before.
+ */
+export function priceParamsFor(s: EffState, cards?: ReadonlyArray<OtdCardRecord>, pack?: PackData): PriceParams {
   const p = cloneParams();
   p.ratePerRating.mid.value = s.rate;
   p.ratePerRating.low.value = Math.min(s.rate, DEFAULT_PRICE_PARAMS.ratePerRating.low.value);
   p.ratePerRating.high.value = Math.max(s.rate, DEFAULT_PRICE_PARAMS.ratePerRating.high.value);
   p.overrides = s.overrides;
+  if (s.usePackRates && pack && pack.size && cards?.length) {
+    const rateByCard: NonNullable<PriceParams['rateByCard']> = {};
+    for (const c of cards) {
+      // shrink toward the card's effective global rate (after sport/owners/premium), so pack and market sides agree
+      const g = rateBand({ id: c.id, sport: c.sport, owners: c.owners }, p).mid;
+      const r = packRateFor(c, { index: pack, packPrice: s.packPrice, globalRate: g });
+      if (r) rateByCard[c.id] = { rate: r.rate, basis: r.basis };
+    }
+    if (Object.keys(rateByCard).length) p.rateByCard = rateByCard;
+  }
   return p;
 }
 
@@ -106,8 +131,8 @@ const levelFor = (card: OtdCardRecord, key: string, mult: number, pp: PriceParam
 };
 
 /** One level per card: the chosen rung, or (AUTO) whichever rung pays back fastest. */
-export function buildLevels(cards: OtdCardRecord[], s: EffState): Map<string, Level> {
-  const pp = priceParamsFor(s);
+export function buildLevels(cards: OtdCardRecord[], s: EffState, pack?: PackData): Map<string, Level> {
+  const pp = priceParamsFor(s, cards, pack);
   const out = new Map<string, Level>();
   const auto = s.rarity === 'AUTO';
   const from = Math.max(0, RUNG_KEYS.indexOf(s.autoMin));

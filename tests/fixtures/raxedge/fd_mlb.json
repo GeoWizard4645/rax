@@ -1,0 +1,16 @@
+{
+ "ok": true,
+ "games": {
+  "Los Angeles Dodgers @ Milwaukee Brewers": {
+   "id": 36165367,
+   "away": "Los Angeles Dodgers",
+   "home": "Milwaukee Brewers",
+   "cm": "2026-10-12T00:00:00.000Z",
+   "ml": {
+    "Los Angeles Dodgers": -104,
+    "Milwaukee Brewers": -112
+   }
+  }
+ },
+ "ts": 1791692898
+}

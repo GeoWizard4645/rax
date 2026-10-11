@@ -50,8 +50,8 @@ Endpoints the client calls — grouped by the tab they'd serve:
 | Tab | Live | Still sample |
 |---|---|---|
 | 1 Rateboard | Everything (board, search, pull, sign-in, offers) | — |
-| 2 Scout | Collection pull (Rateboard) for matching | Auction feed, contenders |
-| 3 Volatility | **Rateboard demand panel** (live offers, buyers, rate spread, floors, keep list, UFC status, owners, season Rax) | Price history, spikes, forecast — no route carries card prices |
+| 2 Scout | Rateboard standing buy offers as bids (rates, not prices), collection matching, repeat bidders | Real auctions / ratings / rarities — see [MARKET-DATA-SOURCES.md](MARKET-DATA-SOURCES.md) |
+| 3 Volatility | **Rateboard demand panel** + a recorded bid-rate history (spikes, candles, forecast after 3 days) | Sale prices / fair value — no route carries them |
 | 4 OTD | **Games database** — per-date anniversaries, per-card calendars, owned-card optimizer, ROI and compare (Rax logs; NFL/NBA/MLB/NHL/CFB/CBB/golf) | Sample only if the feed is down; soccer / WNBA / UFC not covered |
 | 5 Portfolio | Image CDN (`media.realapp.com`) + collection pull + Rateboard best-offer prices + UFC status | Live-game yield (you enter it) |
 | 6 Quads | **Schedule, times, broadcasters, live status** (ESPN public scoreboards, free) | Poll percentages; pace/polls are estimates |

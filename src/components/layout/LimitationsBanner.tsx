@@ -8,7 +8,7 @@ export default function LimitationsBanner() {
         <summary className="flex cursor-pointer items-center gap-2 font-medium">
           <AlertTriangle size={14} className="shrink-0" />
           <span>
-            Not all data here is live. Real's marketplace prices, auctions and poll results aren't publicly available, so those panels are sample or import-only.
+            Not all data here is live. Real's marketplace prices, auctions and poll results aren't publicly available, so those panels use Rateboard bids, your own import, or labelled sample data.
           </span>
           <span className="ml-auto shrink-0 underline">details</span>
         </summary>
@@ -16,7 +16,7 @@ export default function LimitationsBanner() {
           <div>
             <b className="text-emerald">Live</b>
             <ul className="mt-1 list-disc pl-4">
-              <li>Offer board, player search, card collections, UFC fighter status, owners / season Rax and per-game Rax logs (powering Tab 4) — from Rateboard's API, used with its owner's permission (collections are cached ~2 h).</li>
+              <li>Offer board, player search, card collections, UFC fighter status, owners / season Rax and per-game Rax logs (powering Tabs 7–8) — from Rateboard's API, used with its owner's permission (collections are cached ~2 h).</li>
               <li>Game schedule, times, broadcasters and status — ESPN's public scoreboards.</li>
               <li>Card artwork — Real's public image CDN.</li>
             </ul>
@@ -24,8 +24,8 @@ export default function LimitationsBanner() {
           <div>
             <b className="text-amber">Sample or estimated</b>
             <ul className="mt-1 list-disc pl-4">
-              <li>Auction bids, card price history, spikes and forecasts (Tabs 2–3) — no Rateboard route carries them, and Real's own API needs a signed-in app session, so nothing is pulled from it.</li>
-              <li>Tab 4 covers NFL, NBA, MLB, NHL, college football / basketball and golf only — not soccer, WNBA or UFC — and falls back to sample games if the feed is down.</li>
+              <li>Real auction bids, card sale prices, fair value and price history (Tabs 2–3) — Real's own API needs a signed-in app session, so nothing is pulled from it. Both tabs default to Rateboard's standing buy offers instead (bid RATES in Rax per rating point, not sale prices; card rating and rarity unknown); "Imported snapshot" and "Sample" stay selectable and are labelled.</li>
+              <li>Tab 3 history starts when recording started and needs 3 days before spikes, candles and forecasts appear.</li>
               <li>Poll percentages, game pace and polls-per-game (Tab 6) — estimates.</li>
               <li>Tabs 7–8: earnings come from a dated snapshot of Real's per-game Rax; card prices are estimates (Real publishes none). A username pull only knows players and total rating, not each pass's level.</li>
             </ul>
@@ -33,7 +33,7 @@ export default function LimitationsBanner() {
           <div>
             <b className="text-head">Also worth knowing</b>
             <ul className="mt-1 list-disc pl-4">
-              <li>Rateboard demand reflects what buyers offer there, not what cards sell for on Real. Tab 4's "Who to buy" ranks the top anniversaries of the selected date, not every card.</li>
+              <li>Rateboard demand reflects what buyers offer there, not what cards sell for on Real. Tab 7 ranks the top cards in a dated snapshot, not every card ever made.</li>
               <li>Live panels depend on Rateboard and ESPN being up; they can lag or fail without notice.</li>
               <li>Unofficial fan tool, not affiliated with Real. Not financial advice.</li>
             </ul>

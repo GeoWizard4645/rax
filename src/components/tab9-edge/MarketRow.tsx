@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, Pencil } from 'lucide-react';
 import type { MarketType, OddsEvent, OddsSource } from '../../../shared/odds';
-import { ODDS_SOURCE_LABEL } from '../../../shared/odds';
 import type { Consensus, SourceFair } from '../../../shared/oddsConsensus';
 import MarketEditor, { type EditorValue } from './MarketEditor';
 import {
@@ -9,18 +8,27 @@ import {
   agreement,
   consensusFor,
   evalMarket,
+  fmtAge,
   fmtP,
   fmtSigned,
   fmtVol,
   hasDraw,
   lookupEntry,
   sideFairs,
+  withAuto,
+  type AutoReal,
   type Cfg,
   type EntryStore,
 } from './edgeLogic';
 
 export const SOURCE_ORDER: OddsSource[] = ['kalshi', 'polymarket', 'espn-dk'];
-const SHORT: Record<OddsSource, string> = { kalshi: 'Kalshi', polymarket: 'Polymarket', 'espn-dk': 'DraftKings' };
+/** Extra columns when the user has switched on FanDuel / DraftKings from their RaxEdge export. */
+export const RAX_SOURCE_ORDER: OddsSource[] = ['fanduel', 'draftkings'];
+const SHORT: Record<OddsSource, string> = { kalshi: 'Kalshi', polymarket: 'Polymarket', 'espn-dk': 'DraftKings', fanduel: 'FanDuel', draftkings: 'DK · RaxEdge' };
+const SOURCE_TIP: Partial<Record<OddsSource, string>> = {
+  fanduel: 'FanDuel line from your RaxEdge export (a snapshot — check its age in the settings)',
+  draftkings: 'DraftKings from your RaxEdge export. It is the same book as the DraftKings (ESPN) column, so it only counts where ESPN has no DraftKings quote for that line.',
+};
 
 /** One source’s fair % for the first outcome, with its volume / spread (exchanges) or vig (the book). */
 function SourceCell({ sf, name0 }: { sf: SourceFair | undefined; name0: string }) {
@@ -63,25 +71,34 @@ export interface MarketRowProps {
   onToggle: () => void;
   onSave: (v: EditorValue) => void;
   anchorId: string;
+  /** Source columns to show, in order (defaults to Kalshi / Polymarket / DraftKings (ESPN)). */
+  cols?: OddsSource[];
+  /** RaxEdge's number for Real's own market (opt-in, moneyline only) and the current time for its age label. */
+  auto?: AutoReal | null;
+  now?: number;
 }
 
-/** Column header strip for the rows (desktop only). Exported so the list can render it once. */
+/** Column header strip for the rows (desktop only). Exported so the list can render it once. Static class strings so Tailwind sees them. */
 export const ROW_GRID = 'md:grid-cols-[9.5rem_minmax(0,1.25fr)_repeat(3,minmax(0,6.5rem))_minmax(0,9.5rem)]';
-export function RowHeader() {
+export const ROW_GRID_WIDE = 'md:grid-cols-[9rem_minmax(0,1.2fr)_repeat(5,minmax(0,5.25rem))_minmax(0,9.5rem)]';
+export const gridFor = (cols: OddsSource[]) => (cols.length > 3 ? ROW_GRID_WIDE : ROW_GRID);
+export function RowHeader({ cols = SOURCE_ORDER }: { cols?: OddsSource[] }) {
   return (
-    <div className={`hidden gap-3 border-b border-line px-3 py-1.5 text-[11px] uppercase tracking-wider text-muted md:grid ${ROW_GRID}`}>
+    <div className={`hidden gap-3 border-b border-line px-3 py-1.5 text-[11px] uppercase tracking-wider text-muted md:grid ${gridFor(cols)}`}>
       <span>Market</span>
       <span>Fair (consensus) · agreement</span>
-      {SOURCE_ORDER.map((s) => <span key={s}>{SHORT[s]}</span>)}
+      {cols.map((s) => <span key={s} title={SOURCE_TIP[s]} className="truncate">{SHORT[s]}</span>)}
       <span>Your Real % → EV</span>
     </div>
   );
 }
 
-export default function MarketRow({ event, type, lines, line, onLine, cfg, store, open, onToggle, onSave, anchorId }: MarketRowProps) {
-  const c = useMemo(() => consensusFor(event, type, line, cfg.devig), [event, type, line, cfg.devig]);
+export default function MarketRow({ event, type, lines, line, onLine, cfg, store, open, onToggle, onSave, anchorId, cols = SOURCE_ORDER, auto = null, now = Date.now() }: MarketRowProps) {
+  const c = useMemo(() => consensusFor(event, type, line, cfg.devig, cfg.include), [event, type, line, cfg.devig, cfg.include]);
   const found = useMemo(() => lookupEntry(store, event, type, line), [store, event, type, line]);
-  const { best } = useMemo(() => evalMarket(c, found, cfg), [c, found, cfg]);
+  const eff = useMemo(() => withAuto(found, type === 'moneyline' ? auto : null, hasDraw(c)), [found, auto, type, c]);
+  const { best } = useMemo(() => evalMarket(c, eff, cfg), [c, eff, cfg]);
+  const bestIsAuto = !!best && !!eff && (best.idx === 2 ? eff.autoD : eff.auto[best.idx]);
   const sides = sideFairs(c, !!found?.dnb);
   const three = hasDraw(c) && !found?.dnb;
   const bySource = new Map(c.sources.map((s) => [s.source, s]));
@@ -89,7 +106,7 @@ export default function MarketRow({ event, type, lines, line, onLine, cfg, store
 
   return (
     <div id={anchorId} className="border-b border-line/60 last:border-b-0">
-      <div className={`grid items-center gap-x-3 gap-y-2 px-3 py-2 transition-colors hover:bg-hover ${ROW_GRID} ${open ? 'bg-hover' : ''}`}>
+      <div className={`grid items-center gap-x-3 gap-y-2 px-3 py-2 transition-colors hover:bg-hover ${gridFor(cols)} ${open ? 'bg-hover' : ''}`}>
         <div className="flex items-center gap-2">
           <button className="flex min-w-0 items-center gap-1.5 text-left text-sm font-medium text-head" aria-expanded={open} onClick={onToggle} aria-label={`${open ? 'Close' : 'Open'} ${MARKET_LABEL[type]} editor`}>
             <ChevronDown size={14} className={`shrink-0 text-muted transition-transform ${open ? 'rotate-180' : '-rotate-90'}`} />
@@ -118,9 +135,9 @@ export default function MarketRow({ event, type, lines, line, onLine, cfg, store
         </div>
 
         <div className="grid grid-cols-3 gap-2 md:contents">
-          {SOURCE_ORDER.map((src) => (
-            <div key={src} className="cursor-pointer" onClick={onToggle}>
-              <span className="mb-0.5 block text-[10px] uppercase tracking-wider text-muted md:hidden">{ODDS_SOURCE_LABEL[src].split(' ')[0]}</span>
+          {cols.map((src) => (
+            <div key={src} className="cursor-pointer" onClick={onToggle} title={SOURCE_TIP[src]}>
+              <span className="mb-0.5 block text-[10px] uppercase tracking-wider text-muted md:hidden">{SHORT[src]}</span>
               <SourceCell sf={bySource.get(src)} name0={name0} />
               {bySource.get(src) && three && <span className="num block text-[10px] text-muted">draw {fmtP(bySource.get(src)?.draw)}</span>}
             </div>
@@ -135,6 +152,11 @@ export default function MarketRow({ event, type, lines, line, onLine, cfg, store
                 {best.label.length > 14 ? `${best.label.slice(0, 13)}…` : best.label} @ {best.ev.realPct}% · edge {fmtSigned(best.ev.edgePp, 1, ' pp')}
                 {best.ev.stake > 0 && <> · <b className="text-head">{best.ev.stake.toLocaleString('en-US')} Rax</b></>}
               </div>
+              {bestIsAuto && eff?.src && (
+                <span className="chip-blue mt-0.5" title="Real % filled in from your RaxEdge export (Real's own market number). It is not something you typed — re-check it in Real before betting. Type a value to override.">
+                  from RaxEdge · {fmtAge(now - eff.src.s.ts)}
+                </span>
+              )}
             </>
           ) : (
             <span className="inline-flex items-center gap-1 text-xs text-action"><Pencil size={12} /> Enter Real %</span>
@@ -142,7 +164,7 @@ export default function MarketRow({ event, type, lines, line, onLine, cfg, store
           {open && <span className="sr-only">editor open</span>}
         </div>
       </div>
-      {open && <MarketEditor event={event} c={c} found={found} cfg={cfg} onChange={onSave} />}
+      {open && <MarketEditor event={event} c={c} found={found} auto={type === 'moneyline' ? auto : null} now={now} cfg={cfg} onChange={onSave} />}
       {open && type !== 'moneyline' && <p className="hint px-3 pb-2">The line must be the one Real shows. Lines are compared across sources only when identical; alternates are never interpolated.</p>}
     </div>
   );

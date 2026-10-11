@@ -1,0 +1,51 @@
+{
+ "ok": true,
+ "now": 1791692899,
+ "markets": {
+  "9669": {
+   "outcomes": [
+    {
+     "id": 19338,
+     "key": "ANA",
+     "label": "ANA",
+     "probability": 0.8101106841462853
+    },
+    {
+     "id": 19336,
+     "key": "CGY",
+     "label": "CGY",
+     "probability": 0.18988931585371463
+    }
+   ],
+   "isLocked": false,
+   "isSettled": false,
+   "ts": 1791692876
+  },
+  "9670": {
+   "outcomes": [
+    {
+     "id": 19342,
+     "key": "LAK",
+     "label": "LAK",
+     "probability": 0.40414793639003826
+    },
+    {
+     "id": 19339,
+     "key": "VGK",
+     "label": "VGK",
+     "probability": 0.5958520636099617
+    }
+   ],
+   "isLocked": false,
+   "isSettled": false,
+   "ts": 1791692897
+  },
+  "__alive": {
+   "ts": 1791692897,
+   "ids": [
+    "9670",
+    "9669"
+   ]
+  }
+ }
+}

@@ -11,7 +11,16 @@
  * should surface as a "sources disagree" warning.
  */
 import type { MarketType, OddsEvent, OddsMarket, OddsSource } from './odds';
-import { devig2, devig2Power, devigN } from './odds';
+import { RAXEDGE_ODDS_SOURCES, devig2, devig2Power, devigN, isBookSource } from './odds';
+
+/**
+ * Opt-in sources. Sources that are not in the API's default set ('fanduel', 'draftkings' from a RaxEdge export) take part in a
+ * consensus ONLY if the caller passes them in `include`; with no `include` the output is exactly what it was before they existed.
+ * `include` also never lets RaxEdge's DraftKings double count: DraftKings via ESPN and via RaxEdge are the SAME book, so for a
+ * market/line that ESPN already quotes, the RaxEdge copy is ignored (ESPN is refreshed every minute by the API; a RaxEdge export
+ * is a snapshot the user took minutes-to-hours ago). RaxEdge's DraftKings only fills the markets/lines ESPN does not have.
+ */
+export type SourceInclude = ReadonlySet<OddsSource> | undefined;
 
 export type DevigMethod = 'proportional' | 'power';
 
@@ -59,7 +68,7 @@ export function exchangeWeight(volume: number | null, width: number | null): num
 
 /** Fair probabilities of one market (vig removed for books, normalised for exchanges). */
 export function marketFair(m: OddsMarket, method: DevigMethod = 'proportional'): SourceFair {
-  const isBook = m.source === 'espn-dk';
+  const isBook = isBookSource(m.source);
   const [a, b] = [m.outcomes[0].implied, m.outcomes[1].implied];
   const d = m.draw?.implied ?? null;
   let fair: [number, number];
@@ -98,15 +107,25 @@ export interface LineSummary {
   distFromEven: number;
 }
 
-const marketsOf = (event: Pick<OddsEvent, 'markets'>, type: MarketType) => event.markets.filter((m) => m.type === type);
+const lineKey = (l: number | null) => (l === null ? 'null' : l.toFixed(3));
+
+/** Markets of a type that may take part in a consensus: opt-in sources only when included; RaxEdge DraftKings only where ESPN has no DraftKings quote for that line. */
+export function marketsOf(event: Pick<OddsEvent, 'markets'>, type: MarketType, include?: SourceInclude): OddsMarket[] {
+  const of = event.markets.filter((m) => m.type === type);
+  const optIn = (s: OddsSource) => (RAXEDGE_ODDS_SOURCES as readonly OddsSource[]).includes(s);
+  const ok = of.filter((m) => !optIn(m.source) || !!include?.has(m.source));
+  if (!ok.some((m) => m.source === 'draftkings')) return ok;
+  const espnLines = new Set(ok.filter((m) => m.source === 'espn-dk').map((m) => lineKey(m.line)));
+  return ok.filter((m) => !(m.source === 'draftkings' && espnLines.has(lineKey(m.line))));
+}
 
 /**
  * Every line offered for a market type, best first: lines quoted by the most sources, then the one nearest 50/50.
  * `[0]` is the "main" line the consensus defaults to. Moneyline returns a single entry with line = null.
  */
-export function bestLines(event: Pick<OddsEvent, 'markets'>, type: MarketType, method: DevigMethod = 'proportional'): LineSummary[] {
+export function bestLines(event: Pick<OddsEvent, 'markets'>, type: MarketType, method: DevigMethod = 'proportional', include?: SourceInclude): LineSummary[] {
   const byLine = new Map<string, OddsMarket[]>();
-  for (const m of marketsOf(event, type)) {
+  for (const m of marketsOf(event, type, include)) {
     const k = m.line === null ? 'null' : m.line.toFixed(3);
     byLine.set(k, [...(byLine.get(k) ?? []), m]);
   }
@@ -120,7 +139,7 @@ export function bestLines(event: Pick<OddsEvent, 'markets'>, type: MarketType, m
 }
 
 /** The line to use by default for a type (most-quoted, then nearest a coin flip); null for moneyline or no market. */
-export const mainLine = (event: Pick<OddsEvent, 'markets'>, type: MarketType): number | null => bestLines(event, type)[0]?.line ?? null;
+export const mainLine = (event: Pick<OddsEvent, 'markets'>, type: MarketType, include?: SourceInclude): number | null => bestLines(event, type, 'proportional', include)[0]?.line ?? null;
 
 function weighted(fs: SourceFair[]): [number, number, number | null] | null {
   if (!fs.length) return null;
@@ -143,9 +162,9 @@ function weighted(fs: SourceFair[]): [number, number, number | null] | null {
  * `line`: omit for the main line of a spread/total; pass null for moneyline. Soccer 3-way moneylines are normalised across
  * home / draw / away (the draw share is reported separately).
  */
-export function consensusFair(event: Pick<OddsEvent, 'markets' | 'home' | 'away'>, type: MarketType, line?: number | null, method: DevigMethod = 'proportional'): Consensus {
-  const want = type === 'moneyline' ? null : line === undefined ? mainLine(event, type) : line;
-  const ms = marketsOf(event, type).filter((m) => SAME_LINE(m.line, want));
+export function consensusFair(event: Pick<OddsEvent, 'markets' | 'home' | 'away'>, type: MarketType, line?: number | null, method: DevigMethod = 'proportional', include?: SourceInclude): Consensus {
+  const want = type === 'moneyline' ? null : line === undefined ? mainLine(event, type, include) : line;
+  const ms = marketsOf(event, type, include).filter((m) => SAME_LINE(m.line, want));
   const sources = ms.map((m) => marketFair(m, method)).filter((f) => Number.isFinite(f.fair[0]) && Number.isFinite(f.fair[1]));
   const names: [string, string] = type === 'total' ? [`Over ${want ?? ''}`.trim(), `Under ${want ?? ''}`.trim()] : [event.home, event.away];
   const warnings: string[] = [];

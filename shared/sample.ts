@@ -216,7 +216,7 @@ export function sampleAuctions(now: number, series: PlayerSeries[] = sampleSerie
         cardId: `${p.key}:${s.rarity}`,
         playerName: p.name,
         sport: p.sport,
-        rarity: s.rarity,
+        rarity: s.rarity as Rarity,
         cardRating: rating,
         highestBidRax: bid,
         perRatingPrice: perRatingPrice(bid, rating),

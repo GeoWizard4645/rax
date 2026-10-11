@@ -1,0 +1,31 @@
+{
+ "ok": true,
+ "games": {
+  "San Antonio Spurs @ Phoenix Suns": {
+   "id": 36170866,
+   "away": "San Antonio Spurs",
+   "home": "Phoenix Suns",
+   "cm": "2026-10-11T02:45:00.000Z",
+   "spreads": {
+    "San Antonio Spurs": {
+     "8.5": -130
+    },
+    "Phoenix Suns": {
+     "-8.5": -102
+    }
+   },
+   "totals": {
+    "Over": {
+     "213.5": 100
+    },
+    "Under": {
+     "213.5": -132
+    }
+   },
+   "ml": {
+    "San Antonio Spurs": 440,
+    "Phoenix Suns": -700
+   }
+  }
+ }
+}
