@@ -38,7 +38,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           KALSHI_PUSH_SECRET: ${{ secrets.KALSHI_PUSH_SECRET }}
-          PUSH_URL: https://rax.vivaanshahani.com/api/odds/kalshi-push
+          # The pages.dev host, not rax.vivaanshahani.com: the custom domain's Cloudflare bot rules serve GitHub runners a managed challenge (HTTP 403).
+          PUSH_URL: https://rax-super-suite.pages.dev/api/odds/kalshi-push
         run: |
           OUT="$RUNNER_TEMP/out"
           mkdir -p "$OUT/kalshi" && cd "$OUT"
