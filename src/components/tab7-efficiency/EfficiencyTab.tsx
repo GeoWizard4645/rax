@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { rankCards, type EfficiencyParams, type PortfolioOptions } from '../../../shared/otdEfficiency';
 import type { OtdSport } from '../../../shared/otdSnapshot';
-import { load, save } from '../../lib/storage';
 import { Explain } from '../ui/Explain';
 import { Segmented } from '../ui/Segmented';
 import { Loading } from '../ui/StateBlock';
@@ -10,19 +9,18 @@ import Controls from './Controls';
 import MethodPanel from './MethodPanel';
 import OutlookPanel from './OutlookPanel';
 import PortfolioPanel from './PortfolioPanel';
+import ProfilePanel from './ProfilePanel';
 import SwapCalc from './SwapCalc';
 import UpgradeLadder from './UpgradeLadder';
-import { DEFAULT_STATE, buildLevels, windowDays, windowStart, type EffState } from './model';
+import { buildLevels, effParams, windowDays, windowStart } from './model';
+import { useEffState } from './useEffState';
 import { useOtdSnapshot } from './useOtdSnapshot';
 
-const KEY = 'rax_eff_state_v1';
-type View = 'rank' | 'portfolio' | 'outlook' | 'ladder' | 'swaps';
+type View = 'rank' | 'portfolio' | 'mine' | 'outlook' | 'ladder' | 'swaps';
 
 export default function EfficiencyTab() {
-  const [s, setS] = useState<EffState>(() => ({ ...DEFAULT_STATE, ...load<Partial<EffState>>(KEY, {}) }));
+  const { s, set, setS } = useEffState();
   const [view, setView] = useState<View>('rank');
-  const set = useCallback((p: Partial<EffState>) => setS((x) => ({ ...x, ...p })), []);
-  useEffect(() => void save(KEY, s), [s]);
 
   const snap = useOtdSnapshot(s.method);
   const all = snap.data?.cards;
@@ -30,23 +28,13 @@ export default function EfficiencyTab() {
   const sportsOn = useMemo(() => new Set<OtdSport>(s.sports.length ? s.sports : available), [s.sports, available]);
   const cards = useMemo(() => (all ?? []).filter((c) => sportsOn.has(c.sport)), [all, sportsOn]);
 
-  const levels = useMemo(() => buildLevels(cards, s), [cards, s.rarity, s.autoMin, s.multOverride, s.rate, s.overrides]); // eslint-disable-line react-hooks/exhaustive-deps
+  const levels = useMemo(() => buildLevels(cards, s), [cards, s.rarity, s.autoMin, s.multOverride, s.rate, s.overrides, s.ownedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
   const days = windowDays(s);
   const start = useMemo(() => windowStart(s), [s.start]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const params = useMemo<EfficiencyParams>(() => ({
-    window: { start, days },
-    claimsPerDay: 2,
-    scope: 'per-sport',
-    multiplier: 1,
-    annualCap: null,
-    levelOf: (c) => { const l = levels.get(c.id); return l ? { multiplier: l.multiplier, annualCap: l.annualCap } : { multiplier: 0, annualCap: null }; },
-    sports: sportsOn,
-    priceOf: (c) => levels.get(c.id)?.est.price ?? 0,
-    sunkFraction: s.hold === 'keep' ? 1 : s.flipLoss,
-  }), [start, days, levels, sportsOn, s.hold, s.flipLoss]);
+  const params = useMemo<EfficiencyParams>(() => effParams(s, levels, sportsOn, { start, days }), [start, days, levels, sportsOn, s.hold, s.flipLoss]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ownedSet = useMemo(() => new Set(s.owned), [s.owned]);
+  const ownedSet = useMemo(() => new Set(Object.keys(s.ownedLevels)), [s.ownedLevels]);
   const rows = useMemo(() => rankCards(cards, params), [cards, params]);
   const options = useMemo<PortfolioOptions>(() => ({ budget: s.budget, maxCards: s.maxCards, minMarginalRoi: 0, ownedIds: ownedSet }), [s.budget, s.maxCards, ownedSet]);
 
@@ -63,7 +51,12 @@ export default function EfficiencyTab() {
     for (const [id, byRung] of Object.entries(s.overrides)) { const k = levels.get(id)?.key; if (k && byRung[k] != null) m[id] = byRung[k]; }
     return m;
   }, [s.overrides, levels]);
-  const toggleOwned = useCallback((id: string) => setS((x) => ({ ...x, owned: x.owned.includes(id) ? x.owned.filter((y) => y !== id) : [...x.owned, id] })), []);
+  const toggleOwned = useCallback((id: string) => setS((x) => {
+    const o = { ...x.ownedLevels };
+    if (o[id]) delete o[id];
+    else o[id] = levels.get(id)?.key ?? 'Iconic';
+    return { ...x, ownedLevels: o };
+  }), [levels, setS]);
 
   return (
     <div className="space-y-4">
@@ -83,7 +76,7 @@ export default function EfficiencyTab() {
       <Controls s={s} set={set} available={available} />
 
       <Segmented<View> value={view} onChange={setView} label="View" options={[
-        { value: 'rank', label: 'Card rankings' }, { value: 'portfolio', label: 'Best combination' }, { value: 'outlook', label: 'Sports coming up' },
+        { value: 'rank', label: 'Card rankings' }, { value: 'portfolio', label: 'Best combination' }, { value: 'mine', label: `My cards${Object.keys(s.ownedLevels).length ? ` (${Object.keys(s.ownedLevels).length})` : ''}` }, { value: 'outlook', label: 'Sports coming up' },
         { value: 'ladder', label: 'Upgrade ladder' }, { value: 'swaps', label: 'Swaps & packs' },
       ]} />
 
@@ -92,6 +85,7 @@ export default function EfficiencyTab() {
         <CardRankings rows={rows} overrides={overridesFlat} onOverride={onOverride} owned={ownedSet} onToggleOwned={toggleOwned} priceNote={(r) => `${levels.get(r.card.id)?.key ?? ''}: ${levels.get(r.card.id)?.est.basis ?? ''}`} />
       )}
       {!snap.loading && snap.data && view === 'portfolio' && <PortfolioPanel cards={cards} params={params} options={options} levels={levels} proWin={s.proWin} />}
+      {!snap.loading && snap.data && view === 'mine' && <ProfilePanel s={s} set={set} cards={all ?? []} params={params} />}
       {!snap.loading && snap.data && view === 'outlook' && <OutlookPanel cards={cards} params={params} windowDaysN={days} />}
       {!snap.loading && snap.data && view === 'ladder' && <UpgradeLadder cards={cards} s={s} />}
       {view === 'swaps' && <SwapCalc />}

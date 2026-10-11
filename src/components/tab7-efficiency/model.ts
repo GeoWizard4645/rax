@@ -1,4 +1,5 @@
 /** Glue between the snapshot, Real's rarity rules and the price model: one "level" (rung + price) per card. */
+import type { EfficiencyParams } from '../../../shared/otdEfficiency';
 import { ICONIC_LEVELS, RARITY_LADDER, capFor, multiplierFor } from '../../../shared/otdRules';
 import { cloneParams, DEFAULT_PRICE_PARAMS, estimateCardPrice, type PriceEstimate, type PriceParams } from '../../../shared/otdPricing';
 import type { OtdCardRecord, OtdSport } from '../../../shared/otdSnapshot';
@@ -30,8 +31,10 @@ export interface EffState {
   rate: number;
   /** Per-card, per-rung price you saw in-app: id → rung → Rax. */
   overrides: Record<string, Record<string, number>>;
-  /** Ids of cards you already own (free, in the set). */
-  owned: string[];
+  /** Cards you already own, id → ladder key of the level you hold them at (free, always in the set). */
+  ownedLevels: Record<string, string>;
+  /** Last username pulled in the profile view. */
+  username: string;
 }
 
 export const DEFAULT_STATE: EffState = {
@@ -50,7 +53,8 @@ export const DEFAULT_STATE: EffState = {
   flipLoss: 0.1,
   rate: DEFAULT_PRICE_PARAMS.ratePerRating.mid.value,
   overrides: {},
-  owned: [],
+  ownedLevels: {},
+  username: '',
 };
 
 /** Every selectable rung, in ladder order. */
@@ -96,6 +100,12 @@ export function buildLevels(cards: OtdCardRecord[], s: EffState): Map<string, Le
   const from = Math.max(0, RUNG_KEYS.indexOf(s.autoMin));
   const candidates = RUNG_KEYS.slice(from);
   for (const c of cards) {
+    const own = s.ownedLevels[c.id];
+    if (own) {
+      const l = levelFor(c, own, 0, pp);
+      if (l) out.set(c.id, { ...l, est: { ...l.est, price: 0, low: 0, high: 0, basis: `You own this at ${own}` } });
+      continue;
+    }
     if (!auto) {
       const l = levelFor(c, s.rarity, s.multOverride, pp);
       if (l) out.set(c.id, l);
@@ -113,4 +123,19 @@ export function buildLevels(cards: OtdCardRecord[], s: EffState): Map<string, Le
     if (best) out.set(c.id, best);
   }
   return out;
+}
+
+/** Engine parameters from UI state + the per-card levels. `window` overrides the state's timeframe (e.g. one calendar month). */
+export function effParams(s: EffState, levels: Map<string, Level>, sportsOn: ReadonlySet<OtdSport>, window?: { start: Date; days: number }): EfficiencyParams {
+  return {
+    window: window ?? { start: windowStart(s), days: windowDays(s) },
+    claimsPerDay: 2,
+    scope: 'per-sport',
+    multiplier: 1,
+    annualCap: null,
+    levelOf: (c) => { const l = levels.get(c.id); return l ? { multiplier: l.multiplier, annualCap: l.annualCap } : { multiplier: 0, annualCap: null }; },
+    sports: sportsOn,
+    priceOf: (c) => levels.get(c.id)?.est.price ?? 0,
+    sunkFraction: s.hold === 'keep' ? 1 : s.flipLoss,
+  };
 }
