@@ -63,7 +63,7 @@ describe('statistics', () => {
   });
 
   it('rarity multipliers match the spec', () => {
-    expect(RARITY_MULT).toEqual({ Common: 1, Uncommon: 1.2, Rare: 1.6, Epic: 2, Legendary: 2.5, Mystic: 3.2, Iconic: 4 });
+    expect(RARITY_MULT).toEqual({ Common: 2, Uncommon: 3, Rare: 4, Epic: 10, Legendary: 25, Mystic: 75, Iconic: 150 });
   });
 });
 

@@ -69,7 +69,7 @@ export default function OtdTab() {
       {o.derivedBase && <div className="rounded-md border border-line px-3 py-2 text-xs text-muted">Your file had no base-Rax column, so base Rax was assumed to be rating × 10.</div>}
 
       <Explain title="How yield is calculated">
-        <p><span className="num text-head">Final yield = base Rax × sport multiplier × card tier multiplier</span>. Tier multipliers: Common 1.0×, Uncommon 1.2×, Rare 1.6×, Epic 2.0×, Legendary 2.5×, Mystic 3.2×, Iconic 4.0×. Only the top 2 historical performances per sport per day can be claimed.</p>
+        <p><span className="num text-head">Final yield = base Rax × sport multiplier × card tier multiplier</span>. Tier multipliers (level 1 of each tier, per Real's docs): Common 2×, Uncommon 3×, Rare 4×, Epic 10×, Legendary 25×, Mystic 75×, Iconic 150×; each card is also capped per rarity — the full ladder and the per-card cap are modelled in Tab 7. Only the top 2 historical performances per sport per day can be claimed.</p>
         <p><span className="num text-head">Days to break even = price ÷ (annual expected yield ÷ 365)</span>. The spec doesn't give sport multipliers, so they default to 1.0 — edit them below.</p>
       </Explain>
 

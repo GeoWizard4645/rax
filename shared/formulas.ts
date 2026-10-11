@@ -14,15 +14,19 @@ import type {
 export const SPORTS: Sport[] = ['NFL', 'NBA', 'MLB', 'NHL', 'CBB', 'CFB', 'PGA', 'UFC'];
 export const RARITIES: Rarity[] = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mystic', 'Iconic'];
 
-/** Rarity Tier Adjuster (spec §Tab 5). */
+/**
+ * Rarity payout multipliers over General-level rax, level 1 of each tier — from Real's own Player Cards docs
+ * (docs.realapp.link/collect/player-cards, Oct 2026). Legendary has 5 levels (25–40×), Mystic 10 (75–105×) and
+ * Iconic 20 (150–250×); the full ladder, caps and sources live in shared/otdRules.ts.
+ */
 export const RARITY_MULT: Record<Rarity, number> = {
-  Common: 1.0,
-  Uncommon: 1.2,
-  Rare: 1.6,
-  Epic: 2.0,
-  Legendary: 2.5,
-  Mystic: 3.2,
-  Iconic: 4.0,
+  Common: 2,
+  Uncommon: 3,
+  Rare: 4,
+  Epic: 10,
+  Legendary: 25,
+  Mystic: 75,
+  Iconic: 150,
 };
 
 /**

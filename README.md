@@ -10,6 +10,7 @@ An unofficial analytics and scouting terminal for Real App cards, built for **Cl
 | 4 · OTD Rax | 2-claim optimizer, ROI / break-even, comparison, catalog, dataset import | **Sample** until you import games |
 | 5 · Portfolio | Earnings audit, CDN asset downloader | Public CDN (`media.realapp.com`) + inputs you provide |
 | 6 · Quads | Pacing, poll analytics, payout reference, squad board | **Live** schedule (ESPN public scoreboards); **sample** polls |
+| 7 · OTD Efficiency | Which cards (and which rarity) earn the most OTD Rax per Rax spent, over a chosen timeframe; overlap-aware best combination; sport outlook; upgrade ladder; swap calculator | **Observed** snapshot of Real's per-game Rax (via Rateboard) or **Modeled** from ESPN stats — switchable; prices are estimates |
 
 Every panel that can show synthetic data carries a **SAMPLE DATA** badge. Nothing synthetic is presented as live.
 
@@ -93,3 +94,20 @@ Seeded stochastic simulation — **no machine learning**. See `shared/montecarlo
 - Rateboard's server does not authenticate writes (it trusts the `user` field) and publishes password hashes on a public endpoint. This wrapper doesn't rely on or exploit either; it's worth telling its owner.
 - Get Rateboard's blessing: this wrapper sends your users' traffic to their backend.
 - Not affiliated with Real. Not financial advice.
+
+## Tab 7 — OTD Efficiency
+
+Two interchangeable datasets in the same shape (`shared/otdSnapshot.ts`), swapped from the tab's method panel (which also spells out the pros and cons of each):
+
+| Method | Source | Built by | Accuracy |
+|---|---|---|---|
+| **Observed** | Real's own per-game Rax, as logged by Rateboard's `/api/rax` | `node scripts/build-otd-snapshot.mjs` → `public/data/otd-observed.json` | Exact where present (checked against the community top-10 lists, see [docs/OTD-DATASET.md](docs/OTD-DATASET.md)); top cards only |
+| **Modeled** | Free ESPN stat lines → a fitted rating/Rax model | `node scripts/build-modeled-snapshot.mjs` → `public/data/otd-modeled.json` | Approximate; error tables in [docs/RATING-MODEL.md](docs/RATING-MODEL.md) |
+
+How earnings are computed (`shared/otdRules.ts`, from Real's own docs — [docs/OTD-MECHANICS.md](docs/OTD-MECHANICS.md)): payout = `min(cap, multiplier × Σ General-level rax)`; multipliers run Common 2× … Mystic 10 105× … Iconic 1 150× … Iconic 20 250×, caps ≈ 500 × multiplier below Iconic (Iconic uncapped); 2 guaranteed claims per sport per day. There is no Rax "upgrade fee" — a card's level is the summed rating of the play cards you own for it, so cost = 200 + rating needed × Rax-per-rating (`shared/otdPricing.ts`, [docs/OTD-MARKET.md](docs/OTD-MARKET.md)).
+
+`shared/otdEfficiency.ts` ranks cards standalone and builds a portfolio greedily by *marginal* payout per Rax, so cards that only duplicate days you already cover are skipped.
+
+**Prices are estimates.** Real publishes no marketplace data; the default rate (10 Rax per rating) is the median of Rateboard's standing offers. Overwrite any card's price in the table. Unestablished rules (does the per-card cap reset yearly, how long a claim stays open, the Pro bonus win-rate) are labelled assumptions.
+
+Refreshing the snapshots re-queries Rateboard (about 1,400 requests cold, cached on disk after) — please be gentle with its free-tier backend and re-run only when needed.

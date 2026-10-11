@@ -14,6 +14,7 @@ const VolatilityTab = lazy(() => import('./components/tab3-volatility/Volatility
 const OtdTab = lazy(() => import('./components/tab4-otd/OtdTab'));
 const PortfolioTab = lazy(() => import('./components/tab5-portfolio/PortfolioTab'));
 const QuadsTab = lazy(() => import('./components/tab6-quads/QuadsTab'));
+const EfficiencyTab = lazy(() => import('./components/tab7-efficiency/EfficiencyTab'));
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
               <Route path="/otd" element={<OtdTab />} />
               <Route path="/portfolio" element={<PortfolioTab />} />
               <Route path="/quads" element={<QuadsTab />} />
+              <Route path="/efficiency" element={<EfficiencyTab />} />
               <Route path="*" element={<Navigate to="/rateboard" replace />} />
             </Routes>
           </Suspense>

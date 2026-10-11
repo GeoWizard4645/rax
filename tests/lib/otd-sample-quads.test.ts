@@ -12,8 +12,8 @@ const g = (over: Partial<HistoricalGame>): HistoricalGame => ({
 
 describe('OTD yield + optimizer', () => {
   it('final yield = baseRax × sport multiplier × tier multiplier', () => {
-    expect(gameYield(g({ baseRax: 100 }), 'Mystic')).toBeCloseTo(320);
-    expect(gameYield(g({ baseRax: 100 }), 'Common', { NFL: 1.5 } as any)).toBeCloseTo(150);
+    expect(gameYield(g({ baseRax: 100 }), 'Mystic')).toBeCloseTo(7500); // Mystic 75×, per Real's player-card docs
+    expect(gameYield(g({ baseRax: 100 }), 'Common', { NFL: 1.5 } as any)).toBeCloseTo(300); // Common 2× × NFL 1.5
   });
 
   it('flags only the top 2 per sport per day', () => {
@@ -30,8 +30,8 @@ describe('OTD yield + optimizer', () => {
     const nfl = plan.bySport.NFL!;
     expect(nfl.map((r) => [r.card.playerName, r.claim])).toEqual([['NFL2', true], ['NFL3', true], ['NFL1', false]]);
     expect(plan.bySport.NBA![0].claim).toBe(true);
-    expect(plan.claimableTotal).toBe(300 + 200 + 20);
-    expect(plan.leftOnTable).toBe(50);
+    expect(plan.claimableTotal).toBe(300 * 2 + 200 * 2 + 10 * 10); // Common 2×, Epic 10×
+    expect(plan.leftOnTable).toBe(50 * 2);
   });
 
   it('ignores games from a different season or player', () => {
@@ -50,10 +50,10 @@ describe('ROI, break-even, comparison', () => {
     const [roi] = cardRoi(games, 'Epic', '06-10');
     expect(roi.games).toBe(3);
     expect(roi.remainingGames).toBe(1);
-    expect(roi.remainingYield).toBe(600); // 300 × 2.0
-    expect(roi.annualYield).toBe(1200); // (100+200+300) × 2.0
-    expect(roi.maxGame).toBe(600);
-    expect(roi.medianGame).toBe(400);
+    expect(roi.remainingYield).toBe(3000); // 300 × 10 (Epic)
+    expect(roi.annualYield).toBe(6000); // (100+200+300) × 10
+    expect(roi.maxGame).toBe(3000);
+    expect(roi.medianGame).toBe(2000);
   });
   it('days to break even = price / (annual / 365)', () => {
     expect(breakEvenDays(1200, 1200)).toBe(365);

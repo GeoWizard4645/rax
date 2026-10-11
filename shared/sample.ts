@@ -115,7 +115,7 @@ export function sampleSeries(now: number): PlayerSeries[] {
     const hours = 30 * 24;
     const hourly: SeriesPoint[] = [];
     let price = P0 * (0.97 + rr() * 0.06);
-    const lambda = 1.5 + rr() * 5 + (RARITY_MULT[p.rarity] > 2.5 ? 0 : 1.5);
+    const lambda = 1.5 + rr() * 5 + (RARITY_MULT[p.rarity] > 25 ? 0 : 1.5);
     for (let h = hours - 1; h >= 0; h--) {
       const t = end - h * HOUR;
       const inSpike = p.hot && h < 20;
