@@ -11,6 +11,7 @@ An unofficial analytics and scouting terminal for Real App cards, built for **Cl
 | 5 · Portfolio | Earnings audit, CDN asset downloader | Public CDN (`media.realapp.com`) + inputs you provide |
 | 6 · Quads | Pacing, poll analytics, payout reference, squad board | **Live** schedule (ESPN public scoreboards); **sample** polls |
 | 7 · OTD Efficiency | Which cards (and which rarity) earn the most OTD Rax per Rax spent, over a chosen timeframe; overlap-aware best combination; sport outlook; upgrade ladder; swap calculator | **Observed** snapshot of Real's per-game Rax (via Rateboard) or **Modeled** from ESPN stats — switchable; prices are estimates |
+| 9 · Edge / EV | No-vig fair probabilities for every upcoming game from Kalshi, Polymarket and DraftKings-via-ESPN (per source + consensus, moneyline / spread / total); type Real's displayed % to get EV, edge, fractional-Kelly stake, a sensitivity table and a Best-EV board; editable Real rake assumptions; beginner guide | **Live** free public odds, refreshed every 60 s; Real's own % is typed by you (login-gated, Pro-only) |
 
 Every panel that can show synthetic data carries a **SAMPLE DATA** badge. Nothing synthetic is presented as live.
 
@@ -111,3 +112,6 @@ How earnings are computed (`shared/otdRules.ts`, from Real's own docs — [docs/
 **Prices are estimates.** Real publishes no marketplace data; the default rate (10 Rax per rating) is the median of Rateboard's standing offers. Overwrite any card's price in the table. Unestablished rules (does the per-card cap reset yearly, how long a claim stays open, the Pro bonus win-rate) are labelled assumptions.
 
 Refreshing the snapshots re-queries Rateboard (about 1,400 requests cold, cached on disk after) — please be gentle with its free-tier backend and re-run only when needed.
+
+### Tab 7 additions & RaxEdge import
+Timeframes now include 5 and 10 years (one year of anniversaries repeated, with a yearly-vs-lifetime cap switch), the combination picker can minimise overlap, and *My cards* can import your exact passes from RaxEdge in your own browser — see [docs/RAXEDGE-IMPORT.md](docs/RAXEDGE-IMPORT.md). `npm run dev:full` builds and runs the site together with the Functions server (needed for `/api/*`, e.g. Tab 9's odds), so local requests don't fail with 502.

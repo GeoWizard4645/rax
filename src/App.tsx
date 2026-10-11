@@ -16,6 +16,7 @@ const PortfolioTab = lazy(() => import('./components/tab5-portfolio/PortfolioTab
 const QuadsTab = lazy(() => import('./components/tab6-quads/QuadsTab'));
 const EfficiencyTab = lazy(() => import('./components/tab7-efficiency/EfficiencyTab'));
 const CalendarTab = lazy(() => import('./components/tab8-calendar/CalendarTab'));
+const EdgeTab = lazy(() => import('./components/tab9-edge/EdgeTab'));
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="/quads" element={<QuadsTab />} />
               <Route path="/efficiency" element={<EfficiencyTab />} />
               <Route path="/calendar" element={<CalendarTab />} />
+              <Route path="/edge" element={<EdgeTab />} />
               <Route path="*" element={<Navigate to="/rateboard" replace />} />
             </Routes>
           </Suspense>

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Activity, CalendarClock, CalendarDays, Crosshair, Gauge, Gem, Users, Wallet } from 'lucide-react';
+import { Activity, CalendarClock, CalendarDays, Crosshair, Gauge, Gem, Scale, Users, Wallet } from 'lucide-react';
 
 export const TABS = [
   { to: '/rateboard', label: 'Rateboard', icon: Gem },
@@ -10,6 +10,7 @@ export const TABS = [
   { to: '/quads', label: 'Quads', icon: Users },
   { to: '/efficiency', label: 'OTD Efficiency', icon: Gauge },
   { to: '/calendar', label: 'OTD Calendar', icon: CalendarDays },
+  { to: '/edge', label: 'Edge / EV', icon: Scale },
 ] as const;
 
 export default function TabNav() {

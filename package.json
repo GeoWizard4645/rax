@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "RealApp Super-Suite — analytics & scouting terminal (rax.vivaanshahani.com)",
+  "description": "RealApp Super-Suite \u2014 analytics & scouting terminal (rax.vivaanshahani.com)",
   "scripts": {
     "dev": "vite",
     "build": "npm run typecheck && vite build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p functions",
     "test": "vitest run",
     "preview": "npm run build && wrangler pages dev dist --kv CACHE --port 8788",
-    "pages:dev": "wrangler pages dev dist --kv CACHE --port 8788"
+    "pages:dev": "wrangler pages dev dist --kv CACHE --port 8788",
+    "dev:full": "npm run build && (wrangler pages dev dist --kv CACHE --port 8788 & vite)"
   },
   "dependencies": {
     "lucide-react": "^1.52.0",
