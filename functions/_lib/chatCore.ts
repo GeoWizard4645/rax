@@ -136,7 +136,10 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
     let res;
     deps.onStatus?.(iter === 0 ? 'Thinking…' : 'Putting it together…');
     try {
-      res = await runModel(deps.ai, model, [...history, ...added], final ? `${system}\n\nAnswer now using what you have; do not call tools.` : system, final ? [] : MODEL_TOOLS);
+      const convo = [...history, ...added];
+      // reasoning is switched on when the model is about to read tool results back to the user
+      const think = final || convo[convo.length - 1]?.role === 'tool';
+      res = await runModel(deps.ai, model, convo, final ? `${system}\n\nAnswer now using what you have; do not call tools.` : system, final ? [] : MODEL_TOOLS, 900, think);
     } catch (e) {
       if (e instanceof ModelError && e.kind === 'quota') {
         await exhaust(deps.env, now);

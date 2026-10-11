@@ -304,10 +304,19 @@ export const TOOLS: ToolSpec[] = [
       if (rake > 0.5) rake /= 100;
       const rules: RealRules = { ...DEFAULT_REAL_RULES, rake, rakeBasis: enumArg(a, 'rakeBasis', ['payout', 'profit'] as const, 'payout')! };
       const mult = payoutMultiple(pct, rules);
+      const ev = evPct(fair, pct, rules);
+      const be = breakEvenPct(fair, rules);
+      const positive = ev > 0;
       const out: Record<string, unknown> = {
-        fairProbPct: r(fair * 100), realPct: pct, rake, rakeBasis: rules.rakeBasis,
-        netPayoutMultiple: r(mult, 4), evPct: r(evPct(fair, pct, rules)), breakEvenRealPct: r(breakEvenPct(fair, rules)), edgePp: r(fair * 100 - pct),
-        verdict: evPct(fair, pct, rules) > 0 ? '+EV at these assumptions' : 'no edge at these assumptions',
+        // the plain-language answer first, so a model reading this can't flip the sign
+        answer: positive
+          ? `YES, +EV: buying at Real's ${pct}% has expected value of +${r(ev)}% of the stake (fair probability ${r(fair * 100)}% is HIGHER than Real's ${pct}%, so the payout is more than the risk). Buy only while Real shows less than ${r(be)}%.`
+          : `NO, not +EV: buying at Real's ${pct}% has expected value of ${r(ev)}% of the stake (fair probability ${r(fair * 100)}% is NOT high enough to cover Real's price and rake). It would need Real to show less than ${r(be)}%.`,
+        isPositiveEv: positive,
+        evPct: r(ev),
+        edgePp: r(fair * 100 - pct),
+        fairProbPct: r(fair * 100), realPct: pct, breakEvenRealPct: r(be),
+        netPayoutMultiple: r(mult, 4), rake, rakeBasis: rules.rakeBasis,
         fullKellyFraction: r(kellyFraction(fair, mult), 4),
         caveat: "Real's rake, stake limits and price impact are unknown; the fair probability is only as good as the sources. Not financial advice.",
       };

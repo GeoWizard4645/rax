@@ -213,9 +213,11 @@ describe('prompt economy', () => {
     const q = await run([say('ok')], [user('how do I set the budget so the combination is realistic?')]);
     expect(q.ai.calls[0].input.messages[0].content).toContain('Reference passages');
   });
-  it('turns Gemma\'s thinking off and uses the terse tool descriptions', async () => {
+  it('thinks only when reading tool results, and uses the terse tool descriptions', async () => {
     const { ai } = await run([say('ok')], [user('hello there')]);
     expect(ai.calls[0].input.chat_template_kwargs).toEqual({ enable_thinking: false });
+    const two = await run([callTool('calculate', { expression: '1+1' }), say('2')], [user('1+1?')]);
+    expect(two.ai.calls.map((c) => c.input.chat_template_kwargs.enable_thinking)).toEqual([false, true]);
     const calc = ai.calls[0].input.tools.find((t: any) => t.function.name === 'calculate');
     expect(calc.function.description.length).toBeLessThan(150);
   });
@@ -224,5 +226,20 @@ describe('prompt economy', () => {
     await run([() => ({ choices: [{ message: { content: 'x' } }], usage: { prompt_tokens: 1, completion_tokens: 1, neurons: 321 } })], [user('hello')], e);
     const { left } = await remaining(e);
     expect(left).toBeCloseTo(8000 - 321, 0);
+  });
+});
+
+describe('KV write economy', () => {
+  it('batches budget counter writes instead of writing on every call', async () => {
+    const puts: string[] = [];
+    const store = new Map<string, string>();
+    const kv = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, v: string) => (puts.push(k), void store.set(k, v)) };
+    const e: any = { AI_DAILY_NEURONS: '8000', CACHE: kv };
+    // 10 tiny calls of ~2 neurons each: first flushes (no previous write), the rest are batched
+    for (let i = 0; i < 10; i++) await run([() => ({ choices: [{ message: { content: 'x' } }], usage: { prompt_tokens: 1, completion_tokens: 1, neurons: 2 } })], [user(`hello ${i}`)], e);
+    expect(puts.length).toBeLessThanOrEqual(2);
+    // a quota error flushes immediately so every isolate sees the day as spent
+    await run([() => { throw new Error('4006: daily free allocation used up'); }], [user('boom')], e);
+    expect(Number(store.get([...store.keys()][0]))).toBeGreaterThan(7900);
   });
 });

@@ -74,7 +74,11 @@ describe('prediction maths tools', () => {
     expect(e.recommendedStakeRax).toBeGreaterThan(0);
     // accepts percentages and a percent rake
     expect((await call('ev_calc', { fairProb: 60, realPct: 50, rake: 5 })).evPct).toBeCloseTo(14, 6);
-    expect((await call('ev_calc', { fairProb: 0.4, realPct: 50 })).verdict).toMatch(/no edge/);
+    const neg = await call('ev_calc', { fairProb: 0.4, realPct: 50 });
+    expect(neg.isPositiveEv).toBe(false);
+    expect(neg.answer).toMatch(/^NO, not \+EV/);
+    expect(e.isPositiveEv).toBe(true);
+    expect(e.answer).toMatch(/^YES, \+EV/);
   });
   it('ev_calc validates', async () => {
     expect((await runTool('ev_calc', { fairProb: 150, realPct: 50 }, toolCtx())).ok).toBe(false);

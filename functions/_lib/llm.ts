@@ -65,15 +65,15 @@ export function normalise(raw: unknown): ModelResult {
 /** Only the "you've used the day's free neurons" family — a transient 429 or a subrequest limit must not switch the AI off for the day. */
 const QUOTA = /daily free allocation|free allocation|4006|used up your/i;
 
-export async function runModel(ai: AiBinding, model: string, messages: ChatMessage[], system: string, tools: ModelTool[], maxTokens = 900): Promise<ModelResult> {
+export async function runModel(ai: AiBinding, model: string, messages: ChatMessage[], system: string, tools: ModelTool[], maxTokens = 900, think = false): Promise<ModelResult> {
   const input: Record<string, unknown> = {
     messages: [{ role: 'system', content: system }, ...messages.map((m) => ({ ...m, content: m.content ?? '' }))],
     max_completion_tokens: maxTokens,
     temperature: 0.2,
   };
-  // Gemma 4 "thinks" before answering by default: ~3× slower and ~5× more output tokens (measured: 2.7 s / 140 tokens vs 0.85 s / 29
-  // for the same tool call). Tool selection and short answers don't need it.
-  if (model.includes('gemma-4')) input.chat_template_kwargs = { enable_thinking: false };
+  // Gemma 4 "thinks" before answering by default: ~3× slower (measured: 2.7 s vs 0.85 s for the same tool call). Choosing a tool
+  // doesn't need it, but reading tool results back to the user does — with thinking off it once reported a +EV result as "not +EV".
+  if (model.includes('gemma-4')) input.chat_template_kwargs = { enable_thinking: think };
   if (tools.length) Object.assign(input, { tools, tool_choice: 'auto' });
   try {
     return normalise(await ai.run(model, input));

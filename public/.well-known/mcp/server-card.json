@@ -1,0 +1,11 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/mcp-server-card/v1.json",
+  "version": "1.0",
+  "protocolVersion": "2025-06-18",
+  "serverInfo": { "name": "rax-super-suite", "title": "RAX — RealApp Super-Suite", "version": "1.0.0" },
+  "description": "Public, read-only MCP server for rax.vivaanshahani.com: search Real's docs, On-This-Day card maths, prediction-market EV/Kelly, odds tools, live odds and schedules. Unofficial; not affiliated with Real.",
+  "documentationUrl": "https://github.com/GeoWizard4645/rax/blob/main/docs/MCP.md",
+  "transport": { "type": "streamable-http", "endpoint": "/mcp" },
+  "authentication": { "required": false },
+  "capabilities": { "tools": { "listChanged": false }, "resources": { "subscribe": false, "listChanged": false }, "prompts": { "listChanged": false } }
+}

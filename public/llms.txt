@@ -1,0 +1,20 @@
+# RAX — RealApp Super-Suite
+
+> An unofficial analytics and scouting terminal for Real Sports (realapp.com) cards, Rax, On-This-Day claims and prediction markets. Not affiliated with Real. Not financial advice.
+
+- MCP server (Streamable HTTP, public, read-only, no auth): https://rax.vivaanshahani.com/mcp
+- Setup for Instinct, Claude, Cursor, VS Code: https://github.com/GeoWizard4645/rax/blob/main/docs/MCP.md
+- Site guide (every tab, every parameter): https://github.com/GeoWizard4645/rax/blob/main/docs/SITE-GUIDE.md
+- Assistant (chat bubble) design and limits: https://github.com/GeoWizard4645/rax/blob/main/docs/ASSISTANT.md
+- Docs search without an AI: https://rax.vivaanshahani.com/api/docs/search?q=legendary+3+multiplier
+- Real's own docs (the primary source): https://docs.realapp.link/llms.txt
+
+## Tabs
+- /rateboard — Rateboard offer board wrapper
+- /scout — bids-above-market radar and proactive scout
+- /volatility — demand spikes, bid-rate history, Monte Carlo
+- /portfolio — earnings audit, CDN assets
+- /quads — Quads matchups and polls
+- /efficiency — OTD Efficiency: best cards/rarity per Rax spent
+- /calendar — OTD calendar
+- /edge — Edge / EV from Kalshi, Polymarket, DraftKings vs Real's percentage

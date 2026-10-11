@@ -34,6 +34,11 @@ export interface BudgetEnv {
 
 const dayKey = (now = Date.now()) => `ai:neurons:${new Date(now).toISOString().slice(0, 10)}`;
 const memory = new Map<string, number>(); // used when KV is unbound, and as a per-isolate floor
+// KV's free tier allows ~1,000 writes/day, shared with the market-history recorders — so counts are flushed in batches, not per call.
+const FLUSH_NEURONS = 30;
+const FLUSH_EVERY_MS = 60_000;
+const unflushed = new Map<string, number>();
+const lastFlush = new Map<string, number>();
 
 export const capOf = (env: BudgetEnv): number => {
   const n = Number(env.AI_DAILY_NEURONS);
@@ -51,16 +56,21 @@ export async function used(env: BudgetEnv, now = Date.now()): Promise<number> {
   return Math.max(kv, memory.get(k) ?? 0);
 }
 
-export async function record(env: BudgetEnv, neurons: number, now = Date.now()): Promise<number> {
+export async function record(env: BudgetEnv, neurons: number, now = Date.now(), force = false): Promise<number> {
   const k = dayKey(now);
   const next = (await used(env, now)) + neurons;
   memory.set(k, next);
-  for (const old of memory.keys()) if (old !== k) memory.delete(old);
-  try {
-    await env.CACHE?.put(k, String(Math.round(next * 10) / 10), { expirationTtl: 2 * 86400 });
-  } catch {
-    /* over the KV write quota: the in-memory floor still protects this isolate */
-  }
+  for (const old of [...memory.keys()]) if (old !== k) (memory.delete(old), unflushed.delete(old), lastFlush.delete(old));
+  const pending = (unflushed.get(k) ?? 0) + neurons;
+  if (force || pending >= FLUSH_NEURONS || now - (lastFlush.get(k) ?? 0) > FLUSH_EVERY_MS) {
+    try {
+      await env.CACHE?.put(k, String(Math.round(next * 10) / 10), { expirationTtl: 2 * 86400 });
+    } catch {
+      /* over the KV write quota: the in-memory floor still protects this isolate */
+    }
+    unflushed.set(k, 0);
+    lastFlush.set(k, now);
+  } else unflushed.set(k, pending);
   return next;
 }
 
@@ -73,7 +83,7 @@ export async function remaining(env: BudgetEnv, now = Date.now()): Promise<{ lef
 /** Mark today's allowance as spent (Workers AI itself said so). */
 export async function exhaust(env: BudgetEnv, now = Date.now()): Promise<void> {
   const { left } = await remaining(env, now);
-  await record(env, left + 1, now);
+  await record(env, left + 1, now, true);
 }
 
-export const testing = { reset: () => memory.clear() };
+export const testing = { reset: () => (memory.clear(), unflushed.clear(), lastFlush.clear()) };

@@ -38,13 +38,13 @@ The assistant can: switch the sport and the buy/sell mode, and read how many off
 
 ## Tab 2 — Scout (`/scout`)
 
-Per-rating price = highest bid ÷ card rating, compared with that player's 7-day median → **premium %**. Views: *Overpriced Radar*, *Proactive Scout* (needs your Real username; lists bidders on cards you own; the **discount slider** sets your asking price from −30% to +70% relative to their bid, and the DM text is generated), *Repeat Contenders*. Data is sample unless you import your own snapshot ([capture guide](CAPTURE-GUIDE.md)) or a live feed is configured.
+Real's own auction/sale data is login-gated, so by default this tab runs on **Rateboard's standing buy offers**: demand-side bid *rates* (Rax per rating point), not sale prices; card rating and rarity are not in that data. A bid's rate is compared with the same player's 7-day baseline → **premium %**. Views: *Overpriced / bids-above-market Radar*, *Proactive Scout* (needs your Real username; lists bidders on cards you own; the **discount slider** sets your asking price from −30% to +70% relative to their bid, and the DM text is generated), *Repeat Contenders*. A data-source switch offers Live (Rateboard) / your own imported snapshot ([capture guide](CAPTURE-GUIDE.md)) / sample.
 The assistant can: set `username`, `view`, `discount`; run the scout pull (`scout_my_cards`); read the headline numbers.
 
 ## Tab 3 — Volatility (`/volatility`)
 
-Velocity-spike screener (>2σ vs the 7-day baseline), valuation scatter (price vs rating with a trendline: cards below the line are "buy alerts"), volume candles, and a seeded **Monte Carlo** projection (fundamental level + decaying hype, seasonal drift, mean reversion, Student-t shocks and jumps; no machine learning; assumptions are priors, not fitted to Real). Sample data until a live feed is configured.
-The assistant can: set `sport` (ALL or a sport) and select a `player` by name.
+Demand-spike screener (>2σ vs the 7-day baseline), a scatter of bid rate vs depth (cards below the trendline are "buy alerts"), volume candles, and a seeded **Monte Carlo** projection of a player's bid rate (fundamental level + decaying hype, seasonal drift, mean reversion, Student-t shocks and jumps; no machine learning; assumptions are priors, not fitted to Real). The default source is Rateboard's bid rates recorded over time (history only exists from when recording began, so spikes/candles/forecasts need ~3 days); an imported snapshot or clearly labelled **sample** data can be selected; an optional panel compares the cost of a rating point via packs (from a RaxEdge export) with bids. See [MARKET-DATA-SOURCES.md](MARKET-DATA-SOURCES.md) for everything evaluated.
+The assistant can: set `source` (rateboard / imported / sample), `sport` (ALL or a sport; Rateboard source: NFL, CFB, FC, NHL, UFC) and select a `player` by name.
 
 ## Tab 5 — Portfolio (`/portfolio`)
 
@@ -91,7 +91,7 @@ Month grid of what your cards (from Tab 7's *My cards*) pay each day. 2 guarante
 
 For each upcoming game it builds a **consensus fair probability** from three free public sources — Kalshi and Polymarket (exchanges: already vig-free, weighted by volume/spread) and DraftKings lines embedded in ESPN's scoreboard (de-vigged proportionally or by the power method) — for moneyline, spread and total. You type the % that Real shows for a side; the page computes **EV%**, **edge** (fair − Real) and a **fractional-Kelly stake**, plus a sensitivity table and a Best-EV board across everything you've entered. FanDuel is not used (no public API). Real's own % can't be fetched (login-gated, Pro-only).
 
-EV model (shared/realPayout.ts): a YES share priced at the displayed percentage pays 1 Rax; net multiple = (100/pct) × (1 − rake) (or profit-only rake); EV% = (fair × multiple − 1) × 100; break-even % = fair × (1 − rake). Real's real **rake, stake limits and price impact are unknown** — they're editable assumptions (default rake 5%).
+EV model (shared/realPayout.ts): a YES share priced at the displayed percentage pays 1 Rax; net multiple = (100/pct) × (1 − rake) (or profit-only rake); EV% = (fair × multiple − 1) × 100; break-even % = fair × (1 − rake). Real's real **rake, stake limits and price impact are unknown** — they're editable assumptions (default rake 5%). Optionally (off by default), an export from your own RaxEdge session ([RAXEDGE-IMPORT.md](RAXEDGE-IMPORT.md)) adds FanDuel/DraftKings lines and Real's live market % in the browser; Tab 7 can likewise price cards using RaxEdge pack odds.
 
 Assistant-settable: `sport` (`NBA NHL MLB WNBA NFL CFB CBB FC UFC`), `bankroll` (Rax), `kellyFraction` (0.125, 0.25, 0.5, 1), `devig` (`proportional` / `power`), `rake` (0–50 %), `rakeBasis` (`payout` / `profit`), `model` (`fixed` / `pool`), `poolRax`, `minStake`, `maxStake`, `view` (`games` / `board`).
 
