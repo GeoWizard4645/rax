@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { useScoutSurface } from '../../agent/surfaces/useSimpleSurfaces';
 import { useAuctions } from '../../hooks/useAuctions';
@@ -18,6 +18,8 @@ import { Stat } from '../ui/Stat';
 import { rax } from '../../lib/format';
 import RealCaptureImport from '../RealCaptureImport';
 import { useRealMarket } from '../../lib/realMarketStore';
+import { useCommunityMarket } from '../../hooks/useCommunityMarket';
+import { CommunityBadge, CommunityControls, CommunityLine } from '../CommunityData';
 import RealAuctions from './RealAuctions';
 import ContenderBoard from './ContenderBoard';
 import DiscountSlider from './DiscountSlider';
@@ -35,15 +37,23 @@ export default function ScoutTab() {
   const rb = useRbBoard();
   const hist = useRateHistory();
   const baselines = hist.data?.baselines ?? NO_BASELINES;
-  const real = useRealMarket();
+  const localReal = useRealMarket();
+  const community = useCommunityMarket();
   const [chosen, setChosen] = useState<SourceId | null>(null);
   const bidStats = useBidStats(rb.board, baselines);
   // Default: the best REAL source that has data — auctions you captured from Real itself; else Rateboard's live board; else an import; else sample.
   const rbHasData = !!rb.board && rb.board.offers.length > 0;
-  const pick = chosen === 'real' && !real.hasData ? null : chosen; // the capture was cleared while "Real" was selected
-  const source: SourceId = pick ?? (real.hasAuctions ? 'real' : rb.loading ? 'rateboard' : rbHasData ? 'rateboard' : snap ? 'imported' : 'sample');
+  const pick = (chosen === 'real' && !localReal.hasData) || (chosen === 'community' && !community.available) ? null : chosen; // the capture was cleared (or the community DB is unreachable) while it was selected
+  // Default order: your own capture; else the community database when it has auctions; else Rateboard's live board; else an import; else sample.
+  const source: SourceId = pick ?? (localReal.hasAuctions ? 'real' : community.hasAuctions ? 'community' : rb.loading ? 'rateboard' : rbHasData ? 'rateboard' : snap ? 'imported' : 'sample');
   const rate = source === 'rateboard';
-  const isReal = source === 'real';
+  const isCommunity = source === 'community';
+  const isReal = source === 'real' || isCommunity;
+  const real = isCommunity ? community.state : localReal; // what the Real-style views render
+  const { loadRows } = community;
+  useEffect(() => {
+    if (isCommunity) void loadRows();
+  }, [isCommunity, loadRows]);
   const data = source === 'imported' ? imported : source === 'sample' ? api.data : null;
   const { error, loading, reload } = source === 'imported' ? { error: null, loading: false, reload: () => {} } : source === 'sample' ? api : { error: null, loading: false, reload: () => {} };
   const col = useCollections();
@@ -75,17 +85,26 @@ export default function ScoutTab() {
   }, [data, isReal, real.radar]);
 
   const matches = useMemo(() => (data ? matchBids(data.bids, col.collections).length : 0), [data, col.collections]);
-  useScoutSurface({ username: input, setUsername: setInput, view, setView, discount, setDiscount, stats, source: isReal ? 'real' : rate ? 'rateboard' : data?.source, imported: !!imported, matches, pulling: col.pulling ? String(col.pulling) : null, collectionsLoaded: Object.keys(col.collections), submit, reload });
+  useScoutSurface({ username: input, setUsername: setInput, view, setView, discount, setDiscount, stats, source: isCommunity ? 'community' : isReal ? 'real' : rate ? 'rateboard' : data?.source, imported: !!imported, matches, pulling: col.pulling ? String(col.pulling) : null, collectionsLoaded: Object.keys(col.collections), submit, reload });
 
   const options: SourceOption[] = [
     {
       value: 'real',
       label: 'Real marketplace · captured',
-      available: real.hasData,
-      status: real.hasData ? `${real.coverage.liveAuctions} live` : undefined,
-      hint: real.hasData
-        ? `REAL data you recorded from your own signed-in Real session: ${real.coverage.auctions} auctions (current bid, bid count, watchers, time left) with real reference prices from the sales and “Market data” you opened — ${real.summary}. ${real.label}. Bidder names are not shown on Real’s cards, so none are listed.`
+      available: localReal.hasData,
+      status: localReal.hasData ? `${localReal.coverage.liveAuctions} live` : undefined,
+      hint: localReal.hasData
+        ? `REAL data you recorded from your own signed-in Real session: ${localReal.coverage.auctions} auctions (current bid, bid count, watchers, time left) with real reference prices from the sales and “Market data” you opened — ${localReal.summary}. ${localReal.label}. Bidder names are not shown on Real’s cards, so none are listed.`
         : 'Nothing captured yet — open “Capture real Real-marketplace data” below and record the Marketplace from your own session.',
+    },
+    {
+      value: 'community',
+      label: 'Community (shared by RAX users)',
+      available: community.available,
+      status: community.available ? `${community.counts.auctions} auctions` : undefined,
+      hint: community.available
+        ? `Auctions, sales and market stats other RAX users chose to share anonymously from their own Real sessions — ${community.summary?.rows.total.toLocaleString('en-US')} rows from ${community.summary?.contributors} reporter${community.summary?.contributors === 1 ? '' : 's'}. “Verified only” (≥ 2 independent reporters) is on by default. Not Real’s data feed; bidder names are not shown on Real’s cards, so none are listed.`
+        : 'The community database is empty or unavailable. Tick “Share anonymously” when you import a capture to start it.',
     },
     {
       value: 'rateboard',
@@ -113,10 +132,12 @@ export default function ScoutTab() {
           <h1 className="text-lg font-semibold">Proactive Scout &amp; Overpriced Auction Radar</h1>
           <p className="text-sm text-muted">Find bidders already willing to pay a premium — and DM them a price for the card you own.</p>
         </div>
-        <DataBadge source={isReal ? 'real' : rate ? 'rateboard' : data?.source} note={isReal ? `${real.label}. ${real.summary}.` : data?.note} />
+        {isCommunity ? <CommunityBadge label={community.label} /> : <DataBadge source={isReal ? 'real' : rate ? 'rateboard' : data?.source} note={isReal ? `${real.label}. ${real.summary}.` : data?.note} />}
       </div>
       <SourceSelect value={source} onChange={setChosen} options={options} />
       <SampleNotice source={data?.source} note={data?.note} />
+      <CommunityLine community={community} />
+      {isCommunity && <CommunityControls community={community} />}
       <RealCaptureImport />
       {source === 'imported' && imported && snap && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-action/30 bg-action/5 px-3 py-2 text-xs text-head">
@@ -125,8 +146,20 @@ export default function ScoutTab() {
         </div>
       )}
 
-      <Explain title={isReal ? 'How this works on data captured from your Real session — and what it can’t tell you' : rate ? 'How this works on Rateboard data — and what it can’t tell you' : 'How this works — and what to expect'}>
-        {isReal ? (
+      <Explain title={isCommunity ? 'How this works on community-shared data — and what it can’t tell you' : isReal ? 'How this works on data captured from your Real session — and what it can’t tell you' : rate ? 'How this works on Rateboard data — and what it can’t tell you' : 'How this works — and what to expect'}>
+        {isCommunity ? (
+          <>
+            <p>
+              <b className="text-head">Where the data comes from.</b> Other RAX users who ticked “Share anonymously” when they imported a capture from their own Real session. Their auctions, sales and market stats are pooled here; no usernames, IP addresses or accounts are stored. Each row says how many independent people reported it — <b className="text-head">Verified only</b> (on by default) keeps rows that at least 2 different people on different networks reported.
+            </p>
+            <p>
+              The Overpriced Radar works exactly as on a local capture: per-rating price against a real reference (Real’s market stats, then pooled sales, then other live bids). A community auction’s bid and timer are the newest anyone shared, so check the age in the badge.
+            </p>
+            <p className="rounded-md border border-amber/30 bg-amber/5 px-3 py-2 text-amber/90">
+              <b>What this can’t promise:</b> anyone can contribute, so a row seen by one person is unchecked (hidden while Verified only is on), and a coordinated group could still fake agreement. Nothing here is Real’s own feed, bidders are unknown, and an auction past its timer is stale.
+            </p>
+          </>
+        ) : isReal ? (
           <>
             <p>
               <b className="text-head">Where the data comes from.</b> A read-only recorder you run on realapp.com, signed in as yourself, copies what Real already shows on screen: every Marketplace auction you scroll past (player, play, rarity, rating, serial, <i>current bid</i>, bid count, watchers, time left) and, for cards where you open “Market data”, Real’s own median price, price per rating, total sales and quartiles plus the individual recent sales. Nothing is requested from Real by this site and nothing leaves your browser.
@@ -208,7 +241,7 @@ export default function ScoutTab() {
       </form>}
 
       {isReal && (
-        <RealAuctions real={real} view={view} setView={setView} />
+        <RealAuctions real={real} view={view} setView={setView} community={isCommunity} />
       )}
 
       <ImportPanel onImported={(s) => { setSnap(s); setChosen('imported'); }} />

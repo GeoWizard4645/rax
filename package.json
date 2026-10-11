@@ -12,7 +12,9 @@
     "kb": "node scripts/build-kb.mjs",
     "preview": "npm run build && wrangler pages dev dist --kv CACHE --port 8788",
     "pages:dev": "wrangler pages dev dist --kv CACHE --port 8788",
-    "dev:full": "npm run build && (wrangler pages dev dist --kv CACHE --port 8788 & vite)"
+    "dev:full": "npm run build && (wrangler pages dev dist --kv CACHE --port 8788 & vite)",
+    "db:migrate": "wrangler d1 migrations apply rax-market --local",
+    "db:migrate:remote": "wrangler d1 migrations apply rax-market --remote"
   },
   "dependencies": {
     "lucide-react": "^1.52.0",

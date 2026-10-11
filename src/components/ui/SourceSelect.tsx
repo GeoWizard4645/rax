@@ -1,7 +1,7 @@
-import { ClipboardPaste, Database, FlaskConical, Radio } from 'lucide-react';
+import { ClipboardPaste, Database, FlaskConical, Radio, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-export type SourceId = 'real' | 'rateboard' | 'imported' | 'sample';
+export type SourceId = 'real' | 'community' | 'rateboard' | 'imported' | 'sample';
 
 export interface SourceOption {
   value: SourceId;
@@ -16,6 +16,7 @@ export interface SourceOption {
 
 const ICON: Record<SourceId, ReactNode> = {
   real: <Database size={12} />,
+  community: <Users size={12} />,
   rateboard: <Radio size={12} />,
   imported: <ClipboardPaste size={12} />,
   sample: <FlaskConical size={12} />,

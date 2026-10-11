@@ -13,6 +13,8 @@ import ForecastPanel from './ForecastPanel';
 import HistoryProgress, { GrowingHistoryProgress } from './HistoryProgress';
 import RealCaptureImport from '../RealCaptureImport';
 import { useRealMarket } from '../../lib/realMarketStore';
+import { useCommunityMarket } from '../../hooks/useCommunityMarket';
+import { CommunityBadge, CommunityControls, CommunityLine } from '../CommunityData';
 import { BidVsFairScatter, RealDailyHistory, RealFairTable, RealMarketPanel } from './RealPanels';
 import PackVsBids from './PackVsBids';
 import RateboardDemand from './RateboardDemand';
@@ -30,15 +32,22 @@ const realLabel = (p: { key: string; playerName: string; sport: string; rating: 
   p.key.startsWith('pool:') ? `${p.playerName} — pooled, per rating · ${sales} sales` : `${p.playerName} — ${p.sport === 'ALL' ? '' : `${p.sport} `}${p.rating} ${p.rarity ?? ''} · ${sales} sales`;
 
 export default function VolatilityTab() {
-  const real = useRealMarket();
+  const localReal = useRealMarket();
+  const community = useCommunityMarket();
   const [chosen, setChosen] = useState<SourceId | null>(null);
-  // Default: captured Real data when there is some (sales or market stats); else Rateboard's recorded bid rates.
-  const pick = chosen === 'real' && !real.hasData ? null : chosen; // the capture was cleared while "Real" was selected
-  const source: SourceId = pick ?? (real.hasHistory ? 'real' : 'rateboard');
+  // Default: your own captured Real data when there is some (sales or market stats); else the community database when it has some; else Rateboard's recorded bid rates.
+  const pick = (chosen === 'real' && !localReal.hasData) || (chosen === 'community' && !community.available) ? null : chosen; // the capture was cleared (or the community DB is unreachable) while it was selected
+  const source: SourceId = pick ?? (localReal.hasHistory ? 'real' : community.hasHistory ? 'community' : 'rateboard');
   const setSource = setChosen;
   const [sport, setSport] = useState<MarketSportFilter>('ALL');
   const rate = source === 'rateboard';
-  const isReal = source === 'real';
+  const isCommunity = source === 'community';
+  const isReal = source === 'real' || isCommunity;
+  const real = isCommunity ? community.state : localReal; // what the Real-style panels render
+  const { loadRows } = community;
+  useEffect(() => {
+    if (isCommunity) void loadRows();
+  }, [isCommunity, loadRows]);
   const hist = useRateHistory(rate);
   const { data, error, loading, reload } = useMarketSpikes(sport, source);
   const [selected, setSelected] = useState<string | null>(null);
@@ -49,11 +58,20 @@ export default function VolatilityTab() {
     {
       value: 'real',
       label: 'Real marketplace · captured',
-      available: real.hasData,
-      status: real.hasData ? `${real.coverage.priceSales} sales` : undefined,
-      hint: real.hasData
-        ? `REAL data you recorded from your own signed-in Real session: ${real.summary}. Prices, timestamps and market stats are Real’s own; history only grows as you capture. ${real.label}.`
+      available: localReal.hasData,
+      status: localReal.hasData ? `${localReal.coverage.priceSales} sales` : undefined,
+      hint: localReal.hasData
+        ? `REAL data you recorded from your own signed-in Real session: ${localReal.summary}. Prices, timestamps and market stats are Real’s own; history only grows as you capture. ${localReal.label}.`
         : 'Nothing captured yet — open “Capture real Real-marketplace data” below and record the Marketplace and some “Market data” views from your own session.',
+    },
+    {
+      value: 'community',
+      label: 'Community (shared by RAX users)',
+      available: community.available,
+      status: community.available ? `${community.counts.sales} sales` : undefined,
+      hint: community.available
+        ? `Sales and market stats other RAX users chose to share anonymously from their own Real sessions — ${community.summary?.rows.total.toLocaleString('en-US')} rows from ${community.summary?.contributors} reporter${community.summary?.contributors === 1 ? '' : 's'}. “Verified only” (≥ 2 independent reporters) is on by default. History only reaches back as far as people have shared.`
+        : 'The community database is empty or unavailable. Tick “Share anonymously” when you import a capture to start it.',
     },
     {
       value: 'rateboard',
@@ -105,23 +123,27 @@ export default function VolatilityTab() {
           <h1 className="text-lg font-semibold">Market Volatility &amp; Spike Intelligence</h1>
           <p className="text-sm text-muted">
             {isReal
-              ? 'Real sale prices and fair values you captured from your own Real session — daily price history, price spikes, bids against fair value, and a Monte Carlo range once there are enough days of sales.'
+              ? isCommunity
+                ? 'Real sale prices and fair values other RAX users shared anonymously from their own Real sessions — daily price history, price spikes, bids against fair value, and a Monte Carlo range once there are enough days of sales.'
+                : 'Real sale prices and fair values you captured from your own Real session — daily price history, price spikes, bids against fair value, and a Monte Carlo range once there are enough days of sales.'
               : rate
               ? 'How buyers’ standing bid rates move over time — spikes, depth, history and a Monte Carlo range for a player’s bid rate.'
               : 'Price surges, volume spikes and mispriced cards — plus a Monte Carlo range of where a card’s price and rating could go.'}
           </p>
         </div>
-        <DataBadge source={data?.source} note={data?.note} />
+        {isCommunity ? <CommunityBadge label={community.label} /> : <DataBadge source={data?.source} note={data?.note} />}
       </div>
       <SourceSelect value={source} onChange={switchSource} options={options} />
       <SampleNotice source={data?.source} note={data?.note} />
+      <CommunityLine community={community} />
+      {isCommunity && <CommunityControls community={community} />}
       <RealCaptureImport />
       {data?.source === 'live' && data.note && <div className="rounded-md border border-line px-3 py-2 text-xs text-muted">{data.note}</div>}
       {(data?.source === 'imported' || data?.source === 'real' || rate) && data?.note && <div className="rounded-md border border-line px-3 py-2 text-xs text-muted">{data.note}</div>}
 
       {rate && <RateHistoryPanel coverage={cov} error={hist.error} />}
-      {isReal && <RealMarketPanel real={real} />}
-      {isReal && <RealFairTable real={real} />}
+      {isReal && <RealMarketPanel real={real} community={isCommunity} />}
+      {isReal && <RealFairTable real={real} community={isCommunity} />}
       <RateboardDemand />
 
       {rate && (

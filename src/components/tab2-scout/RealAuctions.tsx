@@ -46,7 +46,7 @@ function RefCell({ r, label, now }: { r: RadarItem; label: string; now: number }
  * Tab 2 on the Real marketplace data the user captured: every live auction with its current bid per rating point,
  * compared with a REAL reference price (see shared/realMarket.referenceFor). Bidders are not on Real's cards, so none are shown.
  */
-export default function RealAuctions({ real, view, setView }: { real: RealMarketState; view: View; setView: (v: View) => void }) {
+export default function RealAuctions({ real, view, setView, community = false }: { real: RealMarketState; view: View; setView: (v: View) => void; community?: boolean }) {
   const { radar: items, now, label, coverage } = real;
   const [sport, setSport] = useState('ALL');
   const [status, setStatus] = useState<Status>('live');
@@ -102,7 +102,7 @@ export default function RealAuctions({ real, view, setView }: { real: RealMarket
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <ViewSwitch view={view} setView={setView} />
-        <span className="chip-emerald" title={`Auctions, sales and market stats you recorded from your own Real session. ${real.summary}.`}>{label}</span>
+        <span className={community ? 'chip-blue' : 'chip-emerald'} title={community ? `Auctions, sales and market stats other RAX users shared anonymously from their own Real sessions. ${real.summary}.` : `Auctions, sales and market stats you recorded from your own Real session. ${real.summary}.`}>{label}</span>
       </div>
 
       <div className="panel overflow-hidden">
@@ -118,8 +118,8 @@ export default function RealAuctions({ real, view, setView }: { real: RealMarket
           </div>
         </div>
         {rows.length === 0 ? (
-          <Empty title={items.length ? 'No auctions match those filters' : 'No auctions captured yet'}>
-            {items.length ? 'Try “All” status or “Any time”.' : coverage.sales || coverage.stats ? `You have captured ${coverage.sales.toLocaleString('en-US')} sales and ${coverage.stats} market-data views but no auctions. Scroll the Marketplace with the recorder running to add some; the sales you have will be used as reference prices.` : 'Open the capture box above, run the recorder on the Marketplace and import what it exports.'}
+          <Empty title={items.length ? 'No auctions match those filters' : community ? 'No community auctions to show' : 'No auctions captured yet'}>
+            {items.length ? 'Try “All” status or “Any time”.' : community ? 'Nothing verified is shared yet, or the filter above is hiding single-reporter rows.' : coverage.sales || coverage.stats ? `You have captured ${coverage.sales.toLocaleString('en-US')} sales and ${coverage.stats} market-data views but no auctions. Scroll the Marketplace with the recorder running to add some; the sales you have will be used as reference prices.` : 'Open the capture box above, run the recorder on the Marketplace and import what it exports.'}
           </Empty>
         ) : (
           <div className="max-h-[640px] overflow-auto">

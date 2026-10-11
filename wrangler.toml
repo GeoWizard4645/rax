@@ -27,3 +27,12 @@ CDN_ALLOWED_HOSTS = "media.realapp.com"
 binding = "ODDS_DB"
 database_name = "rax-odds"
 database_id = "582cb5cf-4e32-433f-98e7-153b33439d5a"
+
+# Community market database: opt-in, anonymous captures shared between RAX users (docs/COMMUNITY-MARKET.md). Free tier: 5 GB, 5M row
+# reads/day, 100k row writes/day — functions/_lib/marketDb.ts keeps writes under a self-imposed daily budget.
+# Created with `wrangler d1 create rax-market`; schema in migrations/market/ (its own dir so `d1 migrations apply` for rax-odds never touches it).
+[[d1_databases]]
+binding = "MARKET_DB"
+database_name = "rax-market"
+database_id = "8026e213-9092-4c9a-baeb-63df94d12e6e"
+migrations_dir = "migrations/market"

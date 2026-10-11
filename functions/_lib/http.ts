@@ -3,6 +3,8 @@ export interface Env {
   CACHE?: KVNamespace;
   /** D1 holding the latest Kalshi snapshot per sport (see migrations/0001_kalshi_snapshot.sql). Optional — falls back to the GitHub branch. */
   ODDS_DB?: D1Database;
+  /** D1 holding the opt-in, anonymous community market data (see migrations/market/ and docs/COMMUNITY-MARKET.md). Optional — the endpoints answer 503 without it. */
+  MARKET_DB?: D1Database;
   /** Shared secret the odds-snapshot GitHub Actions loop sends to POST /api/odds/kalshi-push. Unset ⇒ pushes are refused. */
   KALSHI_PUSH_SECRET?: string;
   /** Pages static-asset binding — used to read the bundled bid-rate seed (public/data/rb-rates-seed.json). */

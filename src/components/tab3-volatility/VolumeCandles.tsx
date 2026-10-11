@@ -44,7 +44,7 @@ const fmtT = (t: number, w: Win) => {
 /** Price history (OHLC) + volume for one player over 24h / 7d / 30d. */
 export default function VolumeCandles({ playerKey, name, rating, source }: { playerKey: string; name: string; rating: number; source: SourceId }) {
   const rate = source === 'rateboard';
-  const real = source === 'real';
+  const real = source === 'real' || source === 'community';
   const pooled = real && playerKey.startsWith('pool:');
   const [win, setWin] = useState<Win>('7d');
   const [unit, setUnit] = useState<'card' | 'ppr'>('card');

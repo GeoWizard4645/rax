@@ -5,8 +5,8 @@ An unofficial analytics and scouting terminal for Real App cards, built for **Cl
 | Tab | What it is | Data |
 |---|---|---|
 | 1 · Rateboard | A window onto [Rateboard](https://rateboard-cgi.pages.dev): board, buyer/seller flows, copy-messages, profile inspector | **Live** — every action is a real request to Rateboard |
-| 2 · Scout | Bids-above-market radar, proactive scout (match your collection to buyers), repeat bidders | **Live** Rateboard standing buy offers (bid RATES, Rax per rating point — not sale prices; rating/rarity unknown). Data-source switch: Live / **imported snapshot** ([guide](docs/CAPTURE-GUIDE.md)) / **sample** |
-| 3 · Volatility | Demand-spike screener, bid-rate vs depth scatter, candles, **Monte Carlo projections** of a player's bid rate; optional pack-cost-vs-bids panel | **Live** Rateboard bid rates **recorded over time** (history grows; spikes/candles/forecast unlock after 3 days). Switch: Live / imported snapshot / **sample** — see [docs/MARKET-DATA-SOURCES.md](docs/MARKET-DATA-SOURCES.md) |
+| 2 · Scout | Bids-above-market radar, proactive scout (match your collection to buyers), repeat bidders | **Live** Rateboard standing buy offers (bid RATES, Rax per rating point — not sale prices; rating/rarity unknown). Data-source switch: your own **captured Real data** / **Community** (opt-in, anonymous captures shared by RAX users — [docs/COMMUNITY-MARKET.md](docs/COMMUNITY-MARKET.md)) / Live / **imported snapshot** ([guide](docs/CAPTURE-GUIDE.md)) / **sample** |
+| 3 · Volatility | Demand-spike screener, bid-rate vs depth scatter, candles, **Monte Carlo projections** of a player's bid rate; optional pack-cost-vs-bids panel | **Live** Rateboard bid rates **recorded over time** (history grows; spikes/candles/forecast unlock after 3 days). Switch: your captured Real data / **Community** (shared by RAX users, verified-only by default) / Live / imported snapshot / **sample** — see [docs/MARKET-DATA-SOURCES.md](docs/MARKET-DATA-SOURCES.md) |
 | 5 · Portfolio | Earnings audit, CDN asset downloader | Public CDN (`media.realapp.com`) + inputs you provide |
 | 6 · Quads | Pacing, poll analytics, payout reference, squad board | **Live** schedule (ESPN public scoreboards); **sample** polls |
 | 4 · *(retired)* | The old OTD Rax tab was replaced by Tab 7; `/otd` redirects there. | — |
@@ -30,6 +30,7 @@ npm run dev          # Vite on :5173 (proxies /api → :8788)
 npm run build        # typecheck (app + functions) and build to dist/
 npm run pages:dev    # serve dist/ + Pages Functions locally on :8788 (run build first)
 npm test             # unit tests (vitest)
+npm run db:migrate   # create the local community-market D1 tables (once; see docs/COMMUNITY-MARKET.md)
 npm run kb           # rebuild the assistant's knowledge base (public/data/kb/) from Real's docs + docs/*.md
 ```
 Run `npm run build && npm run pages:dev` in one terminal and `npm run dev` in another for hot reload with real functions.
@@ -68,10 +69,14 @@ functions/api/
   scout/auctions.ts    per-rating price + 7-day baselines + repeat contenders
   market/spikes.ts     spike screen, fair-value model, candles, forecast inputs (?source=rateboard|sample)
   market/rates.ts      Rateboard bid-rate recorder: samples the board into KV, returns coverage + 7-day baselines
+  market/contribute.ts opt-in community market database (D1 `MARKET_DB`): POST an anonymous capture
+  market/community.ts  …and GET it back (summary / sales / auctions / stats, `minReports`) — docs/COMMUNITY-MARKET.md
   intel/schedule.ts    live game schedule from ESPN public scoreboards (Tab 6)
 ```
 
 **Caching.** Responses are cached with Cloudflare's Cache API (free, no write quota) — 15 s for the Rateboard board, 60 s for live games, 300 s for profiles. Workers **KV** holds the rolling market histories (the Rateboard bid-rate change log `rbrates:v1`, plus the legacy auction document `market:v1` if a Real feed is ever configured), each written at most every 10 minutes (≤ 144 writes/day per document). `.github/workflows/rate-history.yml` pings `/api/market/rates` every ~10 min so the bid-rate history grows when nobody is on the site; `scripts/seed-rb-history.ts` rebuilds the seed from Rateboard's own rolling backups. This deviates from "cache everything in KV" on purpose: the free tier allows ~1,000 KV writes/day, which per-response caching would exhaust.
+
+**Community market database.** An optional, opt-in D1 database (`rax-market`, binding `MARKET_DB`, schema in `migrations/market/`) lets users share the Real-marketplace captures they import, anonymously; other users get them as the *Community* source in Tabs 2–3. It stays under D1's free tier through set-based writes, an in-code daily write budget, retention pruning and distinct-reporter verification — see [docs/COMMUNITY-MARKET.md](docs/COMMUNITY-MARKET.md) (including the terms-of-service caveat). Deploying it needs the remote migration (`npm run db:migrate:remote`, already applied) in addition to `wrangler pages deploy`.
 
 **Why the Monte Carlo runs in the browser.** Free-tier Functions get ~10 ms CPU per request; 4,000 simulated paths don't fit. The edge only assembles inputs (`?forecastInputs=`); the simulation runs client-side, seeded and reproducible.
 

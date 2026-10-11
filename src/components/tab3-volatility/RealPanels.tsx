@@ -14,7 +14,7 @@ const KIND_COLOR: Record<RefKind, string> = { 'card-stats': '#10B981', 'player-s
 const day = (t: number | null) => (t ? new Date(t).toISOString().slice(0, 10) : '—');
 
 /** What was captured, how old it is, and how far it is from unlocking spikes and forecasts — the Tab 3 counterpart of the Rateboard recorder panel. */
-export function RealMarketPanel({ real }: { real: RealMarketState }) {
+export function RealMarketPanel({ real, community = false }: { real: RealMarketState; community?: boolean }) {
   const c = real.coverage;
   const other = c.sales - c.priceSales;
   return (
@@ -22,10 +22,12 @@ export function RealMarketPanel({ real }: { real: RealMarketState }) {
       <div className="panel-hd flex-wrap">
         <div>
           <h2 className="flex items-center gap-2">
-            <Database size={14} /> Real marketplace data you’ve captured
+            <Database size={14} /> {community ? 'Real marketplace data shared by the community' : 'Real marketplace data you’ve captured'}
           </h2>
           <p className="text-[11px] font-normal text-muted">
-            Every number on this source comes from your own signed-in Real session: individual sales (price + time), Real’s “Market data” summaries and the live auctions you scrolled past. {real.label}. Price-history <i>chart</i> values are not in Real’s page text, so history here is built from the sales themselves and grows only as you capture.
+            {community
+              ? 'Every number on this source was read off Real’s own screens by RAX users who chose to share their captures anonymously: individual sales (price + time), Real’s “Market data” summaries and live auctions. Rows seen by only one person are hidden while “Verified only” is on.'
+              : 'Every number on this source comes from your own signed-in Real session: individual sales (price + time), Real’s “Market data” summaries and the live auctions you scrolled past.'} {real.label}. Price-history <i>chart</i> values are not in Real’s page text, so history here is built from the sales themselves and grows only as {community ? 'people share' : 'you capture'}.
           </p>
         </div>
         <span className={c.salesDays >= FORECAST_MIN_DAYS ? 'chip-emerald' : 'chip-amber'} title={`Spikes need ≥ ${MIN_HISTORY_DAYS} days of sales for a card; forecasts need ≥ ${FORECAST_MIN_DAYS} distinct days`}>
@@ -49,18 +51,18 @@ export function RealMarketPanel({ real }: { real: RealMarketState }) {
 }
 
 /** Real's own "Market data" numbers, as you saw them, with how old each is. */
-export function RealFairTable({ real }: { real: RealMarketState }) {
+export function RealFairTable({ real, community = false }: { real: RealMarketState; community?: boolean }) {
   const rows = useMemo(() => fairTable(real.store, real.now), [real.store, real.now]);
   return (
     <div className="panel overflow-hidden">
       <div className="panel-hd flex-wrap">
         <div>
           <h2>Fair value — Real’s own market stats <span className="num text-xs font-normal text-muted">({rows.length})</span></h2>
-          <p className="text-[11px] font-normal text-muted">Median price, price per rating, sales count and quartiles exactly as Real’s “Market data” view showed them when you opened it ({real.label}). This is the closest thing to a fair market value that exists.</p>
+          <p className="text-[11px] font-normal text-muted">Median price, price per rating, sales count and quartiles exactly as Real’s “Market data” view showed them when {community ? 'a contributor' : 'you'} opened it ({real.label}). This is the closest thing to a fair market value that exists.</p>
         </div>
       </div>
       {rows.length === 0 ? (
-        <Empty title="No market-data views captured yet">Open “Market data” on a card in Real with the recorder running (Card, Player and Similar tabs each give a different view), export, and import.</Empty>
+        <Empty title={community ? 'No (verified) community market-data views yet' : 'No market-data views captured yet'}>{community ? 'Nothing has been shared for this view, or the “Verified only” filter is hiding single-reporter rows. ' : ''}Open “Market data” on a card in Real with the recorder running (Card, Player and Similar tabs each give a different view), export, and import.</Empty>
       ) : (
         <div className="max-h-[420px] overflow-auto">
           <table className="tbl">
@@ -88,7 +90,7 @@ export function RealFairTable({ real }: { real: RealMarketState }) {
                       <div className="text-[11px] text-muted">{r.rating} {capWord(r.rarity.toLowerCase())} · {r.serial}</div>
                     </td>
                     <td className="text-xs text-muted">{r.scope ?? '?'} · {r.window ?? '?'}</td>
-                    <td className="r num" title={`Real marketplace (captured by you, ${r.seenAt ? ago(r.seenAt, real.now) : 'unknown age'})`}>{rax(r.median)}</td>
+                    <td className="r num" title={`${community ? 'Community database (reported to RAX' : 'Real marketplace (captured by you'}, ${r.seenAt ? ago(r.seenAt, real.now) : 'unknown age'})`}>{rax(r.median)}</td>
                     <td className="r num">{rax(r.medianPerRating)}</td>
                     <td className="r num">{r.q1 != null && r.q3 != null ? `${rax(r.q1)} – ${rax(r.q3)}` : '—'}</td>
                     <td className="r num">{r.min != null && r.max != null ? `${rax(r.min)} – ${rax(r.max)}` : '—'}</td>

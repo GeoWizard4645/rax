@@ -44,7 +44,7 @@ The assistant can: set `username`, `view`, `discount`; run the scout pull (`scou
 ## Tab 3 — Volatility (`/volatility`)
 
 Demand-spike screener (>2σ vs the 7-day baseline), a scatter of bid rate vs depth (cards below the trendline are "buy alerts"), volume candles, and a seeded **Monte Carlo** projection of a player's bid rate (fundamental level + decaying hype, seasonal drift, mean reversion, Student-t shocks and jumps; no machine learning; assumptions are priors, not fitted to Real). The default source is Rateboard's bid rates recorded over time (history only exists from when recording began, so spikes/candles/forecasts need ~3 days); an imported snapshot or clearly labelled **sample** data can be selected; an optional panel compares the cost of a rating point via packs (from a RaxEdge export) with bids. See [MARKET-DATA-SOURCES.md](MARKET-DATA-SOURCES.md) for everything evaluated.
-The assistant can: set `source` (rateboard / imported / sample), `sport` (ALL or a sport; Rateboard source: NFL, CFB, FC, NHL, UFC) and select a `player` by name.
+The assistant can: set `source` (real = your own capture / community = rows other users shared anonymously / rateboard / imported / sample), `sport` (ALL or a sport; Rateboard source: NFL, CFB, FC, NHL, UFC) and select a `player` by name.
 
 ## Tab 5 — Portfolio (`/portfolio`)
 

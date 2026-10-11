@@ -199,4 +199,25 @@ export function useRealMarket(): RealMarketState {
   };
 }
 
+/**
+ * The same state object useRealMarket() returns, for ANY store — used for the community database (src/hooks/useCommunityMarket.ts),
+ * so Tabs 2–3 render it with the components that render a local capture. `label` is the provenance string shown on every number.
+ */
+export function buildMarketState(store: RealStore, now: number, label: string, extra: Pick<RealMarketState, 'importText' | 'clear'>): RealMarketState {
+  const coverage = coverageOf(store, now);
+  return {
+    store,
+    now,
+    hasData: hasAnyData(store),
+    coverage,
+    summary: coverageText(coverage),
+    label,
+    hasAuctions: store.auctions.length > 0,
+    hasHistory: store.sales.length > 0 || store.stats.length > 0,
+    radar: radarItems(store, now),
+    derived: derivedOf(store),
+    ...extra,
+  };
+}
+
 export { emptyStore, noPrune };

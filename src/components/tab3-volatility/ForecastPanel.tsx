@@ -25,7 +25,7 @@ const PHASE_LABEL: Record<string, string> = {
  */
 export default function ForecastPanel({ playerKey, name, source }: { playerKey: string; name: string; source: SourceId }) {
   const rate = source === 'rateboard';
-  const real = source === 'real';
+  const real = source === 'real' || source === 'community';
   const pooled = real && playerKey.startsWith('pool:'); // pooled series are per-rating only (rating is fixed at 1)
   const { data: inp, error, loading, reload } = useForecastInputs(playerKey, source);
   const [metricPick, setMetric] = useState<Metric>('ppr');
