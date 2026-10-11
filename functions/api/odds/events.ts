@@ -23,6 +23,35 @@ import {
 import { cached, err, json, OUR_UA, preflight, type Env } from '../../_lib/http';
 
 const TTL = 45;
+
+/**
+ * Kalshi answers Cloudflare's shared egress IPs with HTTP 429, so when every live Kalshi call fails we fall back to a
+ * snapshot taken by a GitHub Actions job (.github/workflows/odds-snapshot.yml → orphan branch `odds-data`). It is at most
+ * ~10–15 min old and is reported as such in `sources[]`. Single-sport requests only (ALL would need many more subrequests).
+ */
+const SNAPSHOT_URL = (sport: string) => `https://raw.githubusercontent.com/GeoWizard4645/rax/odds-data/kalshi/${sport}.json`;
+const SNAPSHOT_MAX_AGE_MS = 45 * 60_000;
+
+interface KalshiSnapshot {
+  generatedAt: string;
+  payloads: Array<{ id: string; spec: KalshiPayload['spec']; json: unknown }>;
+}
+
+async function loadKalshiSnapshot(sport: OddsSport, wanted: Set<string>, nowMs: number): Promise<{ payloads: KalshiPayload[]; ageMin: number } | null> {
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+    const r = await fetch(SNAPSHOT_URL(sport), { headers: { Accept: 'application/json' }, signal: ctl.signal }).finally(() => clearTimeout(timer));
+    if (!r.ok) return null;
+    const snap = (await r.json()) as KalshiSnapshot;
+    const age = nowMs - Date.parse(snap.generatedAt);
+    if (!(age >= -60_000 && age <= SNAPSHOT_MAX_AGE_MS)) return null;
+    const payloads = snap.payloads.filter((p) => wanted.has(p.id)).map((p) => ({ spec: p.spec, json: p.json }));
+    return payloads.length ? { payloads, ageMin: Math.max(0, Math.round(age / 60_000)) } : null;
+  } catch {
+    return null;
+  }
+}
 const TIMEOUT_MS = 6000;
 
 /** Kalshi answers a burst of ~20 parallel calls with HTTP 429, so its calls are paced; the other sources run fully parallel. */
@@ -115,6 +144,21 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
       } else espn.push({ job, data: r.value });
     });
 
+    // Live Kalshi is blocked from the edge (HTTP 429): use the GitHub-Actions snapshot instead (single-sport requests only).
+    let kalshiNote: string | undefined;
+    const kj = jobs.filter((j) => j.source === 'kalshi');
+    if (sport !== 'ALL' && kj.length && status.get('kalshi')!.ok === 0) {
+      const snap = await loadKalshiSnapshot(sport, new Set(kj.map((j) => j.id)), nowMs);
+      if (snap) {
+        kalshi.push(...snap.payloads);
+        const st = status.get('kalshi')!;
+        kalshiNote = `live Kalshi is rate-limiting our servers (${st.err ?? 'HTTP 429'}); using a ${snap.ageMin}-minute-old snapshot`;
+        st.ok = snap.payloads.length;
+        st.fail = 0;
+        st.err = undefined;
+      }
+    }
+
     const safe = <T,>(source: OddsSource, f: () => T, fallback: T): T => {
       try {
         return f();
@@ -147,6 +191,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
       const total = st.ok + st.fail;
       const out: OddsSourceStatus = { source, ok: planned ? st.ok > 0 : true, count: count(source) };
       if (!planned) out.error = 'no requests planned for this sport/budget';
+      else if (source === 'kalshi' && kalshiNote) out.error = kalshiNote;
       else if (st.fail) out.error = `${st.fail} of ${total} requests failed (${st.err})`;
       return out;
     });

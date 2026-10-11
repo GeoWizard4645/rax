@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixture } from '../fixtures/odds/load';
 import { onRequest } from '../../functions/api/odds/events';
 import type { OddsResponse } from '../../shared/odds';
+import { planFanout } from '../../shared/oddsSources';
 
 const J = (r: Response): Promise<any> => r.json() as Promise<any>;
 const NOW = new Date('2026-10-11T03:30:00Z');
@@ -144,5 +145,44 @@ describe('/api/odds/events', () => {
     const pre = await run('sport=NHL', 'OPTIONS');
     expect(pre.status).toBe(204);
     expect(pre.headers.get('Access-Control-Allow-Methods')).toMatch(/GET/);
+  });
+});
+
+
+describe('Kalshi snapshot fallback (Kalshi 429s Cloudflare IPs)', () => {
+  const kalshiBlocked = { 'api.elections.kalshi.com': () => new Response('slow down', { status: 429 }) };
+  const snapshot = (ageMin: number) => {
+    const fx: Record<string, string> = { KXNHLGAME: 'kalshi_nhl_game', KXNHLSPREAD: 'kalshi_nhl_spread', KXNHLTOTAL: 'kalshi_nhl_total' };
+    const jobs = planFanout('NHL', NOW.getTime(), 999).jobs.filter((j) => j.source === 'kalshi');
+    return {
+      generatedAt: new Date(NOW.getTime() - ageMin * 60_000).toISOString(),
+      sport: 'NHL',
+      payloads: jobs.map((j: any) => ({ id: j.id, spec: j.spec, json: fixture(fx[j.spec.series]) })),
+    };
+  };
+  const ok = (b: unknown) => () => new Response(JSON.stringify(b), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+  it('uses a fresh snapshot when every live Kalshi call fails, and says so', async () => {
+    stub({ ...kalshiBlocked, 'raw.githubusercontent.com': ok(snapshot(8)) });
+    const b = (await J(await run())) as OddsResponse;
+    const k = b.sources.find((s) => s.source === 'kalshi')!;
+    expect(k.ok).toBe(true);
+    expect(k.count).toBeGreaterThan(0);
+    expect(k.error).toMatch(/8-minute-old snapshot/);
+    expect(b.events.some((e) => e.markets.some((m) => m.source === 'kalshi'))).toBe(true);
+    expect(calls.filter((c) => c.url.includes('raw.githubusercontent.com'))).toHaveLength(1);
+  });
+
+  it('ignores a stale snapshot and reports Kalshi as failed', async () => {
+    stub({ ...kalshiBlocked, 'raw.githubusercontent.com': ok(snapshot(120)) });
+    const k = ((await J(await run())) as OddsResponse).sources.find((s) => s.source === 'kalshi')!;
+    expect(k.ok).toBe(false);
+    expect(k.error).toMatch(/429/);
+  });
+
+  it('does not touch the snapshot when live Kalshi works', async () => {
+    stub();
+    await run();
+    expect(calls.some((c) => c.url.includes('raw.githubusercontent.com'))).toBe(false);
   });
 });
