@@ -1,0 +1,17 @@
+name: Odds push diagnostic (temporary)
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      KALSHI_PUSH_SECRET: ${{ secrets.KALSHI_PUSH_SECRET }}
+    steps:
+      - name: secret present?
+        run: '[ -n "$KALSHI_PUSH_SECRET" ] && echo "secret length ${#KALSHI_PUSH_SECRET}" || echo "SECRET EMPTY"'
+      - name: POST with wrong secret (expect 401 JSON from our function)
+        run: curl -sS -i --max-time 20 -X POST -H 'Authorization: Bearer wrong' -d '{}' 'https://rax.vivaanshahani.com/api/odds/kalshi-push?sport=NFL' | head -25
+      - name: POST a real-shaped body with the real secret
+        run: |
+          echo '{"generatedAt":"2026-10-11T00:00:00.000Z","sport":"MLB","payloads":[]}' > body.json
+          curl -sS -i --max-time 20 -X POST -H "Authorization: Bearer $KALSHI_PUSH_SECRET" -H 'Content-Type: application/json' --data-binary @body.json 'https://rax.vivaanshahani.com/api/odds/kalshi-push?sport=MLB' | head -25
