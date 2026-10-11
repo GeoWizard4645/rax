@@ -370,6 +370,8 @@ export function flipMarket(m: OddsMarket): OddsMarket {
 export interface KalshiPayload {
   spec: KalshiSeriesSpec;
   json: unknown;
+  /** When these quotes were actually taken (fetch time, or the snapshot's generatedAt). Kalshi's own `updated_time` is NOT a quote time (it can be days old on a live book). */
+  asOf?: string;
 }
 
 interface KQuote {
@@ -481,7 +483,7 @@ export function parseKalshi(payloads: KalshiPayload[]): RawEvent[] {
           type: 'moneyline',
           line: null,
           outcomes: [outcome('home', g.home, ph), outcome('away', g.away, pa)],
-          updatedAt: str(homeM.updated_time) || new Date(startMs).toISOString(),
+          updatedAt: p.asOf || str(homeM.updated_time) || new Date(startMs).toISOString(),
           volume: vol,
           url: kalshiUrl(p.spec.series),
           width: qh?.width ?? qa?.width ?? null,
@@ -513,7 +515,7 @@ export function parseKalshi(payloads: KalshiPayload[]): RawEvent[] {
         type: 'spread',
         line,
         outcomes: [outcome('home', g.home, pHome), outcome('away', g.away, 1 - pHome)],
-        updatedAt: str(m.updated_time) || new Date(g.startMs).toISOString(),
+        updatedAt: p.asOf || str(m.updated_time) || new Date(g.startMs).toISOString(),
         volume: q.vol,
         url: kalshiUrl(p.spec.series),
         width: q.width,
@@ -540,7 +542,7 @@ export function parseKalshi(payloads: KalshiPayload[]): RawEvent[] {
         type: 'total',
         line: strike,
         outcomes: [outcome('over', `Over ${fmtLine(strike)}`, q.p), outcome('under', `Under ${fmtLine(strike)}`, 1 - q.p)],
-        updatedAt: str(m.updated_time) || new Date(g.startMs).toISOString(),
+        updatedAt: p.asOf || str(m.updated_time) || new Date(g.startMs).toISOString(),
         volume: q.vol,
         url: kalshiUrl(p.spec.series),
         width: q.width,
@@ -822,10 +824,16 @@ const lineNum = (x: unknown): number | null => {
   const n = Number(x.replace(/^[ou]/i, '').replace('+', ''));
   return Number.isFinite(n) ? n : null;
 };
-const side = (o: unknown): { odds: number | null; line: number | null; href: string } => {
+/**
+ * One side of an ESPN/DraftKings market. ESPN's `close` is the line when the game STARTED (frozen), `current` is the live
+ * price (only present once a game is in progress). For a live game only `current` is valid — falling back to `close`
+ * would show pre-game odds as if they were live, so the market is dropped instead (e.g. DK suspended it → "OFF").
+ */
+const side = (o: unknown, live = false): { odds: number | null; line: number | null; href: string } => {
   const r = rec(o);
-  const c = rec(r.close);
-  const cur = Object.keys(c).length ? c : rec(r.open);
+  const has = (x: Record<string, unknown>) => Object.keys(x).length > 0;
+  const c = rec(r.current);
+  const cur = has(c) ? c : live ? {} : has(rec(r.close)) ? rec(r.close) : rec(r.open);
   return { odds: parseAmerican(cur.odds), line: lineNum(cur.line), href: str(rec(cur.link).href) };
 };
 
@@ -848,22 +856,23 @@ function bookOutcomes(a: number, b: number): [number, number] | null {
 }
 
 /** One ESPN competition's `odds[]` → OddsMarket[] (DraftKings preferred; any provider if DK is absent). */
-export function espnOddsToMarkets(odds: unknown, home: string, away: string, nowIso: string): OddsMarket[] {
+export function espnOddsToMarkets(odds: unknown, home: string, away: string, nowIso: string, live = false): OddsMarket[] {
   const list = arr(odds).map(rec).filter((o) => Object.keys(o).length);
   if (!list.length) return [];
   const o = list.find((x) => /draftkings/i.test(str(rec(x.provider).name))) ?? list[0];
   const book: OddsSource = 'espn-dk';
   const mks: OddsMarket[] = [];
-  const url = cleanDkUrl(str(rec(o.link).href)) ?? cleanDkUrl(side(rec(o.moneyline).home).href);
+  const url = cleanDkUrl(str(rec(o.link).href)) ?? cleanDkUrl(side(rec(o.moneyline).home, live).href);
 
   // Moneyline (+ draw for soccer).
   const ml = rec(o.moneyline);
-  const mh = side(ml.home);
-  const ma = side(ml.away);
-  const hOdds = mh.odds ?? parseAmerican(rec(o.homeTeamOdds).moneyLine);
-  const aOdds = ma.odds ?? parseAmerican(rec(o.awayTeamOdds).moneyLine);
+  const mh = side(ml.home, live);
+  const ma = side(ml.away, live);
+  // The flat homeTeamOdds/awayTeamOdds/overUnder fields are the pre-game line: only a fallback outside live games.
+  const hOdds = mh.odds ?? (live ? null : parseAmerican(rec(o.homeTeamOdds).moneyLine));
+  const aOdds = ma.odds ?? (live ? null : parseAmerican(rec(o.awayTeamOdds).moneyLine));
   if (hOdds !== null && aOdds !== null) {
-    const dOdds = side(ml.draw).odds ?? parseAmerican(rec(o.drawOdds).moneyLine);
+    const dOdds = side(ml.draw, live).odds ?? (live ? null : parseAmerican(rec(o.drawOdds).moneyLine));
     const pr = bookOutcomes(hOdds, aOdds);
     if (pr) {
       const m: OddsMarket = { source: book, type: 'moneyline', line: null, outcomes: [outcome('home', home, pr[0], hOdds), outcome('away', away, pr[1], aOdds)], updatedAt: nowIso, volume: null, url };
@@ -873,17 +882,17 @@ export function espnOddsToMarkets(odds: unknown, home: string, away: string, now
   }
   // Spread (home line).
   const ps = rec(o.pointSpread);
-  const sh = side(ps.home);
-  const sa = side(ps.away);
+  const sh = side(ps.home, live);
+  const sa = side(ps.away, live);
   if (sh.odds !== null && sa.odds !== null && sh.line !== null) {
     const pr = bookOutcomes(sh.odds, sa.odds);
     if (pr) mks.push({ source: book, type: 'spread', line: sh.line, outcomes: [outcome('home', home, pr[0], sh.odds), outcome('away', away, pr[1], sa.odds)], updatedAt: nowIso, volume: null, url });
   }
   // Total.
   const tt = rec(o.total);
-  const to = side(tt.over);
-  const tu = side(tt.under);
-  const tl = to.line ?? tu.line ?? num(o.overUnder);
+  const to = side(tt.over, live);
+  const tu = side(tt.under, live);
+  const tl = to.line ?? tu.line ?? (live ? null : num(o.overUnder));
   if (to.odds !== null && tu.odds !== null && tl !== null) {
     const pr = bookOutcomes(to.odds, tu.odds);
     if (pr) mks.push({ source: book, type: 'total', line: tl, outcomes: [outcome('over', `Over ${fmtLine(tl)}`, pr[0], to.odds), outcome('under', `Under ${fmtLine(tl)}`, pr[1], tu.odds)], updatedAt: nowIso, volume: null, url });
@@ -932,7 +941,7 @@ export function parseEspnOdds(spec: EspnLeagueSpec, json: unknown, nowIso: strin
         startQuality: 'exact',
         status,
         orientationTrusted: spec.sport !== 'UFC',
-        markets: status === 'final' ? [] : espnOddsToMarkets(c.odds, home, away, nowIso),
+        markets: status === 'final' ? [] : espnOddsToMarkets(c.odds, home, away, nowIso, status === 'live'),
       });
     }
   }

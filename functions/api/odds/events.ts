@@ -47,7 +47,7 @@ async function loadKalshiSnapshot(sport: OddsSport, wanted: Set<string>, nowMs: 
     const snap = (await r.json()) as KalshiSnapshot;
     const age = nowMs - Date.parse(snap.generatedAt);
     if (!(age >= -60_000 && age <= SNAPSHOT_MAX_AGE_MS)) return null;
-    const payloads = snap.payloads.filter((p) => wanted.has(p.id)).map((p) => ({ spec: p.spec, json: p.json }));
+    const payloads = snap.payloads.filter((p) => wanted.has(p.id)).map((p) => ({ spec: p.spec, json: p.json, asOf: snap.generatedAt }));
     return payloads.length ? { payloads, ageMin: Math.max(0, Math.round(age / 60_000)) } : null;
   } catch {
     return null;
@@ -136,7 +136,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
         return;
       }
       st.ok++;
-      if (job.source === 'kalshi') kalshi.push({ spec: job.spec, json: r.value });
+      if (job.source === 'kalshi') kalshi.push({ spec: job.spec, json: r.value, asOf: nowIso });
       else if (job.source === 'polymarket') {
         const p = poly.get(job.spec.league) ?? { spec: job.spec };
         if (job.kind === 'moneyline') p.moneyline = r.value;
@@ -147,13 +147,17 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
 
     // Live Kalshi is blocked from the edge (HTTP 429): use the GitHub-Actions snapshot instead (single-sport requests only).
     let kalshiNote: string | undefined;
+    let kalshiFromSnapshot = false;
+    let snapAgeMin = 0;
     const kj = jobs.filter((j) => j.source === 'kalshi');
     if (sport !== 'ALL' && kj.length && status.get('kalshi')!.ok === 0) {
       const snap = await loadKalshiSnapshot(sport, new Set(kj.map((j) => j.id)), nowMs);
       if (snap) {
         kalshi.push(...snap.payloads);
+        kalshiFromSnapshot = true;
         const st = status.get('kalshi')!;
         kalshiNote = `live Kalshi is rate-limiting our servers (${st.err ?? 'HTTP 429'}); using a ${snap.ageMin}-minute-old snapshot${snap.ageMin > SNAPSHOT_STALE_MIN ? ' — STALE, Kalshi prices may have moved a lot' : ''}`;
+        snapAgeMin = snap.ageMin;
         st.ok = snap.payloads.length;
         st.fail = 0;
         st.err = undefined;
@@ -183,21 +187,33 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
     });
 
     const windowDays = sport === 'ALL' ? 2 : 3;
-    const events = matchEvents([eUniq, pRaw, kRaw], nowMs).filter((e) => Date.parse(e.startsAt) <= nowMs + windowDays * 86_400_000 + 6 * 3600_000);
+    const events = matchEvents([eUniq, pRaw, kRaw], nowMs);
+    // A snapshot is minutes-to-hours old: fine for a game that hasn't started, wrong for one in progress (the price moves
+    // every play — this is how a 47% pre-game Kalshi number ended up next to a 69% live one). Drop it for live games.
+    let droppedLiveKalshi = 0;
+    if (kalshiFromSnapshot) {
+      for (const e of events) {
+        if (e.status !== 'live') continue;
+        const keep = e.markets.filter((m) => m.source !== 'kalshi');
+        droppedLiveKalshi += e.markets.length - keep.length;
+        e.markets = keep;
+      }
+    }
+    const visible = events.filter((e) => e.markets.length > 0).filter((e) => Date.parse(e.startsAt) <= nowMs + windowDays * 86_400_000 + 6 * 3600_000);
 
-    const count = (src: OddsSource) => events.reduce((n, e) => n + e.markets.filter((m) => m.source === src).length, 0);
+    const count = (src: OddsSource) => visible.reduce((n, e) => n + e.markets.filter((m) => m.source === src).length, 0);
     const sources: OddsSourceStatus[] = (['kalshi', 'polymarket', 'espn-dk'] as OddsSource[]).map((source) => {
       const st = status.get(source)!;
       const planned = jobs.some((j) => j.source === source);
       const total = st.ok + st.fail;
       const out: OddsSourceStatus = { source, ok: planned ? st.ok > 0 : true, count: count(source) };
       if (!planned) out.error = 'no requests planned for this sport/budget';
-      else if (source === 'kalshi' && kalshiNote) out.error = kalshiNote;
+      else if (source === 'kalshi' && kalshiNote) out.error = kalshiNote + (droppedLiveKalshi ? `; Kalshi prices hidden for games in progress (${droppedLiveKalshi} markets) because a ${snapAgeMin}-minute-old price is not a live price` : '');
       else if (st.fail) out.error = `${st.fail} of ${total} requests failed (${st.err})`;
       return out;
     });
 
-    const body: OddsResponse = { generatedAt: nowIso, sport, events, sources, meta: { subrequests: jobs.length, trimmed, windowDays, ...(lite || sport === 'ALL' ? { lite: true } : {}) } };
+    const body: OddsResponse = { generatedAt: nowIso, sport, events: visible, sources, meta: { subrequests: jobs.length, trimmed, windowDays, ...(lite || sport === 'ALL' ? { lite: true } : {}) } };
     return json(body, 200, { 'X-Data-Source': 'kalshi,polymarket,espn(draftkings)' });
   }, (p) => waitUntil(p));
 };

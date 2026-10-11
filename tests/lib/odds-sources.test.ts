@@ -278,6 +278,30 @@ describe('ESPN / DraftKings parser (recorded scoreboards)', () => {
   });
 });
 
+describe('ESPN live lines', () => {
+  // ESPN's `close` is the frozen pre-game line; `current` is the live price (CHI @ GB, 2026-10-11: +110 pre-game, -358 live).
+  const odds = { provider: { name: 'DraftKings' }, overUnder: 46.5, homeTeamOdds: { moneyLine: 110 }, awayTeamOdds: { moneyLine: -130 },
+    moneyline: { home: { close: { odds: '+110' }, current: { odds: '-358' } }, away: { close: { odds: '-130' }, current: { odds: '+290' } } },
+    pointSpread: { home: { close: { line: '+1.5', odds: '-102' }, current: { line: '-7.5', odds: '-112' } }, away: { close: { line: '-1.5', odds: '-118' }, current: { line: '+7.5', odds: '-118' } } },
+    total: { over: { close: { line: 'o46.5', odds: '-115' }, current: { line: 'o49.5', odds: '-114' } }, under: { close: { line: 'u46.5', odds: '-105' }, current: { line: 'u49.5', odds: '-106' } } } };
+  it('uses current (not close) once the game is live', () => {
+    const mk = espnOddsToMarkets([odds], 'GB', 'CHI', 'x', true);
+    expect(mk.find((m) => m.type === 'moneyline')!.outcomes[0].american).toBe(-358);
+    expect(mk.find((m) => m.type === 'spread')!.line).toBe(-7.5);
+    expect(mk.find((m) => m.type === 'total')!.line).toBe(49.5);
+  });
+  it('never falls back to the pre-game line for a live game', () => {
+    const noCur = { ...odds, moneyline: { home: { close: { odds: '+110' }, current: { odds: 'OFF' } }, away: { close: { odds: '-130' }, current: { odds: 'OFF' } } }, pointSpread: {}, total: { over: { close: { line: 'o46.5', odds: '-115' } }, under: { close: { line: 'u46.5', odds: '-105' } } } };
+    expect(espnOddsToMarkets([noCur], 'GB', 'CHI', 'x', true)).toEqual([]);
+    expect(espnOddsToMarkets([noCur], 'GB', 'CHI', 'x', false).map((m) => m.type)).toEqual(['moneyline', 'total']); // pre-game: close is right
+  });
+  it('parseEspnOdds passes the live flag from the event state', () => {
+    const ev = (state: string) => ({ events: [{ id: '1', date: '2026-10-11T17:00Z', status: { type: { state } }, competitions: [{ competitors: [{ homeAway: 'home', team: { displayName: 'GB' } }, { homeAway: 'away', team: { displayName: 'CHI' } }], odds: [odds] }] }] });
+    expect(parseEspnOdds(ESPN_LEAGUES[0], ev('in'), '')[0].markets.find((m) => m.type === 'moneyline')!.outcomes[0].american).toBe(-358);
+    expect(parseEspnOdds(ESPN_LEAGUES[0], ev('pre'), '')[0].markets.find((m) => m.type === 'moneyline')!.outcomes[0].american).toBe(-358); // current wins whenever present
+  });
+});
+
 describe('matchEvents', () => {
   const lists = () => [nhlEspn(), nhlPoly(), nhlKalshi()];
   it('merges the same game across the three sources (names differ, Kalshi start is derived)', () => {
