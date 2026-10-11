@@ -19,7 +19,11 @@ export interface ProviderSpec {
   id: ProviderId;
   label: string;
   base: string;
-  /** Tried in order; each model has its own rate limit on these services, so a second model doubles the free allowance. */
+  /**
+   * Tried in order: the best model that is cheap/free and has a long context (all ≥ 64k; our prompts are ~3–6k tokens), then others.
+   * Each model has its own rate limit on these services, so a second model adds free allowance. Verified Oct 2026 — Groq against
+   * the account's own limits page (llama-3.3-70b is no longer offered), Cerebras docs, OpenRouter's /models API, Gemini pricing page.
+   */
   models: string[];
   secret: 'GROQ_API_KEY' | 'GEMINI_API_KEY' | 'CEREBRAS_API_KEY' | 'OPENROUTER_API_KEY';
   /** Where a visitor creates a free key. */
@@ -29,10 +33,10 @@ export interface ProviderSpec {
 }
 
 export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
-  groq: { id: 'groq', label: 'Groq', base: 'https://api.groq.com/openai/v1', models: ['llama-3.3-70b-versatile', 'openai/gpt-oss-20b'], secret: 'GROQ_API_KEY', keyUrl: 'https://console.groq.com/keys' },
-  cerebras: { id: 'cerebras', label: 'Cerebras', base: 'https://api.cerebras.ai/v1', models: ['gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507'], secret: 'CEREBRAS_API_KEY', keyUrl: 'https://cloud.cerebras.ai' },
-  openrouter: { id: 'openrouter', label: 'OpenRouter', base: 'https://openrouter.ai/api/v1', models: ['openai/gpt-oss-120b:free', 'qwen/qwen3-coder:free'], secret: 'OPENROUTER_API_KEY', keyUrl: 'https://openrouter.ai/keys' },
-  gemini: { id: 'gemini', label: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai', models: ['gemini-3.8-flash', 'gemini-3.5-flash-lite'], secret: 'GEMINI_API_KEY', keyUrl: 'https://aistudio.google.com/apikey', trainsOnFreeTier: true },
+  groq: { id: 'groq', label: 'Groq', base: 'https://api.groq.com/openai/v1', models: ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'openai/gpt-oss-20b'], secret: 'GROQ_API_KEY', keyUrl: 'https://console.groq.com/keys' },
+  cerebras: { id: 'cerebras', label: 'Cerebras', base: 'https://api.cerebras.ai/v1', models: ['gpt-oss-120b', 'qwen-3.8-27b'], secret: 'CEREBRAS_API_KEY', keyUrl: 'https://cloud.cerebras.ai' },
+  openrouter: { id: 'openrouter', label: 'OpenRouter', base: 'https://openrouter.ai/api/v1', models: ['nvidia/nemotron-3-super-120b-a12b:free', 'google/gemma-4-31b-it:free'], secret: 'OPENROUTER_API_KEY', keyUrl: 'https://openrouter.ai/keys' },
+  gemini: { id: 'gemini', label: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai', models: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'], secret: 'GEMINI_API_KEY', keyUrl: 'https://aistudio.google.com/apikey', trainsOnFreeTier: true },
 };
 
 /** Order the site falls back in: no-training providers first, Gemini (free tier may train on prompts) last. */
@@ -139,6 +143,8 @@ export async function runRoute(r: Route, messages: ChatMessage[], system: string
   }
   const msg = `${spec.label} ${res.status}: ${asKB(detail)}`.replace(r.apiKey, '•••');
   if (res.status === 401 || res.status === 403 || (res.status === 400 && /api key|api_key|invalid key|permission denied/i.test(detail))) throw new ModelError(msg, 'auth');
+  // a retired / not-offered model: stop asking for it for a while instead of failing every request first
+  if (res.status === 404 || (res.status === 400 && /model/i.test(detail) && /not found|does not exist|decommission|no longer|not supported|unavailable|no access|not available/i.test(detail))) throw new ModelError(msg, 'other', 6 * 3600);
   if (res.status === 429 || res.status === 402) {
     const ra = Number(res.headers.get('retry-after'));
     throw new ModelError(msg, 'rate', Number.isFinite(ra) && ra > 0 ? ra : /per day|daily|RPD|TPD/i.test(detail) ? 3600 : 60);

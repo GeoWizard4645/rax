@@ -163,7 +163,7 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
         if (e.kind === 'auth') {
           if (r.byok) throw e;
           park(r, 3600, now); // a bad site key: stop hammering it
-        } else if (e.kind === 'rate') park(r, e.retryAfter ?? 60, now);
+        } else if (e.kind === 'rate' || (e.kind === 'other' && e.retryAfter)) park(r, e.retryAfter ?? 60, now);
         return null;
       }
     };

@@ -41,8 +41,8 @@ export interface ChatState {
 
 export type OwnProvider = 'groq' | 'gemini';
 export const OWN_PROVIDERS: Record<OwnProvider, { label: string; keyUrl: string; note: string }> = {
-  groq: { label: 'Groq', keyUrl: 'https://console.groq.com/keys', note: 'Free tier, fast Llama / gpt-oss models.' },
-  gemini: { label: 'Google Gemini', keyUrl: 'https://aistudio.google.com/apikey', note: 'Free tier — Google may use free-tier prompts to improve its products.' },
+  groq: { label: 'Groq', keyUrl: 'https://console.groq.com/keys', note: 'Free tier; uses gpt-oss-120b, then Qwen 3.8.' },
+  gemini: { label: 'Google Gemini', keyUrl: 'https://aistudio.google.com/apikey', note: 'Free tier; uses Gemini Flash-Lite. Google may use free-tier prompts to improve its products.' },
 };
 const OWN_KEY = 'rax_ai_key_v1';
 const readOwn = (): { provider: OwnProvider; key: string } | null => {

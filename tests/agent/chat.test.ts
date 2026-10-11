@@ -299,20 +299,32 @@ describe('provider fallbacks + bring-your-own-key', () => {
     const e = { AI_DAILY_NEURONS: '100', GROQ_API_KEY: KEY };
     await run([say('x', { prompt_tokens: 20_000, completion_tokens: 0 })], [user('one')], e);
     const res = await runChat({ messages: [user('two')], context: ctx }, { ai: fakeAi([say('never')]), tools: toolCtx(), env: e, fallbacks: await routes(e) });
-    expect(res).toMatchObject({ ok: true, provider: 'groq', model: 'llama-3.3-70b-versatile' });
+    expect(res).toMatchObject({ ok: true, provider: 'groq', model: 'openai/gpt-oss-120b' });
     expect(seen[0].url).toBe('https://api.groq.com/openai/v1/chat/completions');
   });
 
   it('parks a rate-limited model and tries the next one on the same provider', async () => {
-    handler = (_u, n) => (n === 1 ? fail(429, 'Rate limit reached for model', { 'retry-after': '30' }) : ok('second model'));
+    let first = true;
+    handler = () => (first ? ((first = false), fail(429, 'Rate limit reached for model', { 'retry-after': '30' })) : ok('second model'));
     const e = { GROQ_API_KEY: KEY, AI_DAILY_NEURONS: '0.5' };
     const res = await runChat({ messages: [user('hi')], context: ctx }, { tools: toolCtx(), env: e, fallbacks: await routes(e) });
-    expect(res).toMatchObject({ ok: true, model: 'openai/gpt-oss-20b' });
-    expect(seen.map((s) => s.body.model)).toEqual(['llama-3.3-70b-versatile', 'openai/gpt-oss-20b']);
+    expect(res).toMatchObject({ ok: true, model: 'qwen/qwen3.8-27b' });
+    expect(seen.map((s) => s.body.model)).toEqual(['openai/gpt-oss-120b', 'qwen/qwen3.8-27b']);
     // the first model stays parked for the next request
     seen.length = 0;
     await runChat({ messages: [user('again')], context: ctx }, { tools: toolCtx(), env: e, fallbacks: await routes(e) });
-    expect(seen.map((s) => s.body.model)).toEqual(['openai/gpt-oss-20b']);
+    expect(seen.map((s) => s.body.model)).toEqual(['qwen/qwen3.8-27b']);
+  });
+
+  it('stops asking for a model the provider says it no longer offers', async () => {
+    let first = true;
+    handler = () => (first ? ((first = false), fail(404, 'The model `openai/gpt-oss-120b` does not exist or you do not have access to it.')) : ok('next model'));
+    const e = { GROQ_API_KEY: KEY, AI_DAILY_NEURONS: '0.5' };
+    const res = await runChat({ messages: [user('hi')], context: ctx }, { tools: toolCtx(), env: e, fallbacks: await routes(e) });
+    expect(res).toMatchObject({ ok: true, model: 'qwen/qwen3.8-27b' });
+    seen.length = 0;
+    await runChat({ messages: [user('again')], context: ctx }, { tools: toolCtx(), env: e, fallbacks: await routes(e) });
+    expect(seen.map((s) => s.body.model)).toEqual(['qwen/qwen3.8-27b']);
   });
 
   it("uses the visitor's own key first, skips the neuron budget, and never lets the key leak into errors", async () => {
@@ -339,7 +351,7 @@ describe('provider fallbacks + bring-your-own-key', () => {
     expect(h('groq', 'has spaces in the key value here')).toEqual([]);
     expect(h('cerebras', KEY)).toEqual([]); // site-only provider
     expect(h('evil', KEY)).toEqual([]);
-    expect(h('gemini', 'AIzaSyAbcdefghijklmnopqrstuv')).toHaveLength(2);
+    expect(h('gemini', 'AIzaSyAbcdefghijklmnopqrstuv')).toHaveLength(3);
   });
 
   it('keeps Gemini thought signatures on tool calls and adds the bypass for history from other models', async () => {
