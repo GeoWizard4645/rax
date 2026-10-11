@@ -89,6 +89,8 @@ export interface OddsSourceStatus {
   /** Events/markets this source contributed. */
   count: number;
   error?: string;
+  /** Informational (does not make the source 'partial'), e.g. "via a 40 s-old snapshot". */
+  note?: string;
 }
 
 export interface OddsResponse {

@@ -114,7 +114,18 @@ Free plan: **50 subrequests** and ~**10 ms CPU** per invocation. `planFanout()` 
 
 ## Kalshi from production: the snapshot fallback
 
-Kalshi answers Cloudflare's shared egress IPs with **HTTP 429** (checked 2026-10-11: every live call from the deployed function failed, locally everything works), and it 403s any browser `Origin`, so neither the edge nor the browser can read it live. `.github/workflows/odds-snapshot.yml` runs `scripts/kalshi-snapshot.ts` every ~10 minutes on a GitHub runner (free for a public repo) and force-pushes one JSON file per sport to the orphan branch `odds-data` (`kalshi/NFL.json`, …). `/api/odds/events` tries Kalshi live first; if every live call fails it reads `raw.githubusercontent.com/GeoWizard4645/rax/odds-data/kalshi/<SPORT>.json` (1 subrequest, reserved in the budget), rejects anything older than 3 h (and flags anything over 45 min as STALE), and reports `"live Kalshi is rate-limiting our servers …; using a N-minute-old snapshot"` in `sources[]`. Single-sport requests only. If the repo goes private, raw.githubusercontent.com needs auth and the fallback stops working. Trigger a run by hand: `gh workflow run odds-snapshot.yml`.
+Kalshi answers Cloudflare's shared egress IPs with **HTTP 429** (checked 2026-10-11: every live call from the deployed function failed, locally everything works), and it 403s any browser `Origin`, so neither the edge nor the browser can read it live. `.github/workflows/odds-snapshot.yml` therefore runs `scripts/kalshi-snapshot.ts` on a GitHub runner (free: public repo ⇒ unlimited Actions minutes) and force-pushes one JSON file per sport to the orphan branch `odds-data` (`kalshi/NFL.json`, …).
+
+**It is a loop, not a cron.** GitHub's `*/10` cron turned out to be best-effort (runs 5½ h apart on 2026-10-11, so "live" Kalshi was an hour old). Now one job loops for ~5 h 50 m, snapshotting about every 40 s, then starts its successor with `gh workflow run` (a `workflow_dispatch` made with `GITHUB_TOKEN` is allowed to trigger a run); an hourly cron and manual dispatch are only a backup if the chain breaks (`concurrency: odds-snapshot`, never cancel the running loop). It exits after 30 consecutive failures instead of burning minutes while Kalshi is down. Only sports with a game live or starting within ~8 h are refreshed every cycle, the rest every 5 min, and payloads are slimmed to the fields `parseKalshi` reads (≈ 0.7 MB for everything vs 3.4 MB).
+
+`/api/odds/events` tries Kalshi live first; if every live call fails it reads `raw.githubusercontent.com/GeoWizard4645/rax/odds-data/kalshi/<SPORT>.json?t=<30 s bucket>` (1 subrequest, reserved in the budget; the query string defeats raw.githubusercontent's ~5 min cache) and rejects anything older than 3 h. Single-sport requests only. How the age is shown and used:
+
+- ≤ 5 min old: `sources[].note` ("snapshot taken 40 s ago") — the chip stays **ok**.
+- > 5 min: `sources[].error` ("… — STALE") — chip **partial**.
+- Older than **150 s** (`LIVE_SNAPSHOT_MAX_AGE_SEC`): Kalshi prices are **hidden for games in progress** (a live price moves every play); pre-game games keep them.
+- Every Kalshi `OddsMarket.updatedAt` is the real quote time (live fetch or the snapshot's `generatedAt`) — Kalshi's own `updated_time` is not a quote time.
+
+If the repo goes private, raw.githubusercontent.com needs auth **and** a 24/7 loop would cost Actions minutes (2000/month free) — the fallback stops being free. Start/restart the loop by hand: `gh workflow run odds-snapshot.yml`.
 
 ## Optional: FanDuel / DraftKings / Real % from the user's own RaxEdge export (client-side, opt-in)
 

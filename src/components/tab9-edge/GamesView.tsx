@@ -46,7 +46,7 @@ export function StatusBar({ st, now, onReload, sport }: { st: SportOdds; now: nu
       {(st.data?.sources ?? []).map((s) => {
         const u = STATE_UI[sourceState(s)];
         return (
-          <span key={s.source} className={u.cls} title={s.error ?? `${s.count} market${s.count === 1 ? '' : 's'}`}>
+          <span key={s.source} className={u.cls} title={s.error ?? s.note ?? `${s.count} market${s.count === 1 ? '' : 's'}`}>
             {chipLabel(s.source)} · {u.text}
             {sourceState(s) === 'ok' || sourceState(s) === 'partial' ? <span className="num"> · {s.count}</span> : null}
           </span>

@@ -1,24 +1,30 @@
 name: Kalshi odds snapshot
 
 # Kalshi answers Cloudflare's shared egress IPs with HTTP 429, so /api/odds/events can't read it live from the edge.
-# This job (a GitHub runner IP, free for a public repo) snapshots Kalshi's public market data every ~10 minutes and
-# force-pushes it to the orphan branch `odds-data`; the function falls back to it (read via raw.githubusercontent.com).
+# GitHub's own cron is best-effort (runs were seen hours apart), so this is NOT a cron job: one job loops for ~5 h 50 m,
+# snapshotting Kalshi's public market data every ~40 s (every sport with a live/imminent game; the rest every 5 min) and
+# force-pushing it to the orphan branch `odds-data`; the function reads it via raw.githubusercontent.com.
+# When the time box ends the job starts its successor (workflow_dispatch via GITHUB_TOKEN is allowed to trigger runs), and an
+# hourly cron + manual dispatch act as a backup if the chain ever breaks. Free: public repo ⇒ unlimited Actions minutes.
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '7 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
+# Never two loops at once; a newer pending run replaces an older pending one, the running loop is never cancelled.
 concurrency:
   group: odds-snapshot
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   snapshot:
     runs-on: ubuntu-latest
+    timeout-minutes: 358
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,17 +32,45 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Fetch Kalshi
+      - name: Build the snapshot script
+        run: npx esbuild scripts/kalshi-snapshot.ts --bundle --platform=node --format=esm --outfile="$RUNNER_TEMP/ks.mjs"
+      - name: Snapshot loop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
-          npx esbuild scripts/kalshi-snapshot.ts --bundle --platform=node --format=esm --outfile="$RUNNER_TEMP/ks.mjs"
-          node "$RUNNER_TEMP/ks.mjs" "$RUNNER_TEMP/out"
-      - name: Publish to the odds-data branch
-        run: |
-          cd "$RUNNER_TEMP/out"
+          OUT="$RUNNER_TEMP/out"
+          mkdir -p "$OUT/kalshi" && cd "$OUT"
           git init -q -b odds-data
           git config user.name "odds-snapshot[bot]"
           git config user.email "odds-snapshot@users.noreply.github.com"
-          mkdir kalshi && mv ./*.json kalshi/
-          git add -A
-          git commit -q -m "Kalshi snapshot $(date -u +%FT%TZ)"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" odds-data
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          # Seed with the previous snapshot so cold sports keep their files across restarts.
+          git fetch -q --depth=1 "$REMOTE" odds-data 2>/dev/null && git archive FETCH_HEAD kalshi 2>/dev/null | tar -x || true
+
+          END=$(( $(date +%s) + 350*60 ))
+          HANDED_OVER=0
+          FAILS=0
+          while [ "$(date +%s)" -lt "$END" ]; do
+            START=$(date +%s)
+            # Start the successor one cycle early so the next run is already queued when this one exits.
+            if [ "$HANDED_OVER" = 0 ] && [ $(( END - START )) -lt 120 ]; then
+              gh workflow run odds-snapshot.yml --repo "$REPO" --ref "${GITHUB_REF_NAME}" && HANDED_OVER=1 || true
+            fi
+            if node "$RUNNER_TEMP/ks.mjs" "$OUT/kalshi"; then
+              git add -A
+              if git rev-parse -q --verify HEAD >/dev/null; then
+                git commit -q --amend --allow-empty -m "Kalshi snapshot $(date -u +%FT%TZ)"
+              else
+                git commit -q -m "Kalshi snapshot $(date -u +%FT%TZ)"
+              fi
+              if git push -q -f "$REMOTE" odds-data; then FAILS=0; else FAILS=$((FAILS+1)); echo "push failed ($FAILS)"; fi
+            else
+              FAILS=$((FAILS+1)); echo "snapshot failed ($FAILS)"
+            fi
+            # Persistent failure (Kalshi down / blocked): stop burning minutes; the hourly cron or next dispatch retries.
+            [ "$FAILS" -ge 30 ] && { echo "too many consecutive failures, exiting"; HANDED_OVER=1; break; }
+            ELAPSED=$(( $(date +%s) - START ))
+            [ "$ELAPSED" -lt 40 ] && sleep $(( 40 - ELAPSED ))
+          done
+          [ "$HANDED_OVER" = 0 ] && gh workflow run odds-snapshot.yml --repo "$REPO" --ref "${GITHUB_REF_NAME}" || true

@@ -162,22 +162,31 @@ describe('Kalshi snapshot fallback (Kalshi 429s Cloudflare IPs)', () => {
   };
   const ok = (b: unknown) => () => new Response(JSON.stringify(b), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
-  it('uses a fresh snapshot when every live Kalshi call fails, and says so', async () => {
-    stub({ ...kalshiBlocked, 'raw.githubusercontent.com': ok(snapshot(8)) });
+  it('uses a fresh snapshot when every live Kalshi call fails, and says so without marking the source partial', async () => {
+    stub({ ...kalshiBlocked, 'raw.githubusercontent.com': ok(snapshot(0.5)) });
     const b = (await J(await run())) as OddsResponse;
     const k = b.sources.find((s) => s.source === 'kalshi')!;
     expect(k.ok).toBe(true);
     expect(k.count).toBeGreaterThan(0);
-    expect(k.error).toMatch(/8-minute-old snapshot/);
+    expect(k.error).toBeUndefined();
+    expect(k.note).toMatch(/snapshot taken 30 s ago/);
+    expect(calls.find((c) => c.url.includes('raw.githubusercontent.com'))!.url).toMatch(/\?t=\d+$/); // cache-buster
     expect(b.events.some((e) => e.markets.some((m) => m.source === 'kalshi'))).toBe(true);
     expect(calls.filter((c) => c.url.includes('raw.githubusercontent.com'))).toHaveLength(1);
+  });
+
+  it('flags an 8-minute-old snapshot as STALE (partial) but still uses it', async () => {
+    stub({ ...kalshiBlocked, 'raw.githubusercontent.com': ok(snapshot(8)) });
+    const k = ((await J(await run())) as OddsResponse).sources.find((s) => s.source === 'kalshi')!;
+    expect(k.ok).toBe(true);
+    expect(k.error).toMatch(/snapshot taken 8 min ago — STALE/);
   });
 
   it('flags a 90-minute-old snapshot as STALE but still uses it', async () => {
     stub({ ...kalshiBlocked, 'raw.githubusercontent.com': ok(snapshot(90)) });
     const k = ((await J(await run())) as OddsResponse).sources.find((s) => s.source === 'kalshi')!;
     expect(k.ok).toBe(true);
-    expect(k.error).toMatch(/90-minute-old snapshot — STALE/);
+    expect(k.error).toMatch(/snapshot taken 90 min ago — STALE/);
   });
 
   it('drops a snapshot older than 3 hours and reports Kalshi as failed', async () => {

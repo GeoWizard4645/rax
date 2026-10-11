@@ -29,26 +29,29 @@ const TTL = 45;
  * snapshot taken by a GitHub Actions job (.github/workflows/odds-snapshot.yml → orphan branch `odds-data`). It is at most
  * ~10–15 min old and is reported as such in `sources[]`. Single-sport requests only (ALL would need many more subrequests).
  */
-const SNAPSHOT_URL = (sport: string) => `https://raw.githubusercontent.com/GeoWizard4645/rax/odds-data/kalshi/${sport}.json`;
-const SNAPSHOT_MAX_AGE_MS = 3 * 3600_000; // GitHub's cron is best-effort (can run late); older than this the data is dropped
-const SNAPSHOT_STALE_MIN = 45; // beyond this the status note says STALE
+// raw.githubusercontent.com caches each URL for ~5 min; a per-30 s query string makes it fetch the current file instead.
+const SNAPSHOT_URL = (sport: string, nowMs: number) => `https://raw.githubusercontent.com/GeoWizard4645/rax/odds-data/kalshi/${sport}.json?t=${Math.floor(nowMs / 30_000)}`;
+const SNAPSHOT_MAX_AGE_MS = 3 * 3600_000; // older than this the data is dropped
+const SNAPSHOT_STALE_MIN = 5; // the snapshot job refreshes every ~40 s; beyond this the status note says STALE
+/** A snapshot this fresh is still shown for games in progress (labelled); older ones are hidden for live games. */
+const LIVE_SNAPSHOT_MAX_AGE_SEC = 150;
 
 interface KalshiSnapshot {
   generatedAt: string;
   payloads: Array<{ id: string; spec: KalshiPayload['spec']; json: unknown }>;
 }
 
-async function loadKalshiSnapshot(sport: OddsSport, wanted: Set<string>, nowMs: number): Promise<{ payloads: KalshiPayload[]; ageMin: number } | null> {
+async function loadKalshiSnapshot(sport: OddsSport, wanted: Set<string>, nowMs: number): Promise<{ payloads: KalshiPayload[]; ageMin: number; ageSec: number } | null> {
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
-    const r = await fetch(SNAPSHOT_URL(sport), { headers: { Accept: 'application/json' }, signal: ctl.signal }).finally(() => clearTimeout(timer));
+    const r = await fetch(SNAPSHOT_URL(sport, nowMs), { headers: { Accept: 'application/json' }, signal: ctl.signal }).finally(() => clearTimeout(timer));
     if (!r.ok) return null;
     const snap = (await r.json()) as KalshiSnapshot;
     const age = nowMs - Date.parse(snap.generatedAt);
     if (!(age >= -60_000 && age <= SNAPSHOT_MAX_AGE_MS)) return null;
     const payloads = snap.payloads.filter((p) => wanted.has(p.id)).map((p) => ({ spec: p.spec, json: p.json, asOf: snap.generatedAt }));
-    return payloads.length ? { payloads, ageMin: Math.max(0, Math.round(age / 60_000)) } : null;
+    return payloads.length ? { payloads, ageMin: Math.max(0, Math.round(age / 60_000)), ageSec: Math.max(0, Math.round(age / 1000)) } : null;
   } catch {
     return null;
   }
@@ -148,7 +151,8 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
     // Live Kalshi is blocked from the edge (HTTP 429): use the GitHub-Actions snapshot instead (single-sport requests only).
     let kalshiNote: string | undefined;
     let kalshiFromSnapshot = false;
-    let snapAgeMin = 0;
+    let snapAgeSec = 0;
+    let snapStale = false;
     const kj = jobs.filter((j) => j.source === 'kalshi');
     if (sport !== 'ALL' && kj.length && status.get('kalshi')!.ok === 0) {
       const snap = await loadKalshiSnapshot(sport, new Set(kj.map((j) => j.id)), nowMs);
@@ -156,8 +160,10 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
         kalshi.push(...snap.payloads);
         kalshiFromSnapshot = true;
         const st = status.get('kalshi')!;
-        kalshiNote = `live Kalshi is rate-limiting our servers (${st.err ?? 'HTTP 429'}); using a ${snap.ageMin}-minute-old snapshot${snap.ageMin > SNAPSHOT_STALE_MIN ? ' — STALE, Kalshi prices may have moved a lot' : ''}`;
-        snapAgeMin = snap.ageMin;
+        snapAgeSec = snap.ageSec;
+        snapStale = snap.ageMin > SNAPSHOT_STALE_MIN;
+        const age = snap.ageSec < 90 ? `${snap.ageSec} s` : `${snap.ageMin} min`;
+        kalshiNote = `Kalshi blocks our servers (${st.err ?? 'HTTP 429'}), so prices come from a snapshot taken ${age} ago${snapStale ? ' — STALE, Kalshi prices may have moved a lot' : ''}`;
         st.ok = snap.payloads.length;
         st.fail = 0;
         st.err = undefined;
@@ -188,10 +194,10 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
 
     const windowDays = sport === 'ALL' ? 2 : 3;
     const events = matchEvents([eUniq, pRaw, kRaw], nowMs);
-    // A snapshot is minutes-to-hours old: fine for a game that hasn't started, wrong for one in progress (the price moves
-    // every play — this is how a 47% pre-game Kalshi number ended up next to a 69% live one). Drop it for live games.
+    // A snapshot older than a couple of minutes is fine for a game that hasn't started but wrong for one in progress (the
+    // price moves every play — this is how a 47% pre-game Kalshi number ended up next to a 69% live one): drop it for live games.
     let droppedLiveKalshi = 0;
-    if (kalshiFromSnapshot) {
+    if (kalshiFromSnapshot && snapAgeSec > LIVE_SNAPSHOT_MAX_AGE_SEC) {
       for (const e of events) {
         if (e.status !== 'live') continue;
         const keep = e.markets.filter((m) => m.source !== 'kalshi');
@@ -208,7 +214,12 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
       const total = st.ok + st.fail;
       const out: OddsSourceStatus = { source, ok: planned ? st.ok > 0 : true, count: count(source) };
       if (!planned) out.error = 'no requests planned for this sport/budget';
-      else if (source === 'kalshi' && kalshiNote) out.error = kalshiNote + (droppedLiveKalshi ? `; Kalshi prices hidden for games in progress (${droppedLiveKalshi} markets) because a ${snapAgeMin}-minute-old price is not a live price` : '');
+      else if (source === 'kalshi' && kalshiNote) {
+        // Fresh snapshot (the loop job refreshes ~every 40 s) = a note; stale or hidden-for-live = 'partial'.
+        const hidden = droppedLiveKalshi ? `; Kalshi prices hidden for games in progress (${droppedLiveKalshi} markets) because a ${Math.round(snapAgeSec / 60)}-minute-old price is not a live price` : '';
+        if (snapStale || hidden) out.error = kalshiNote + hidden;
+        else out.note = kalshiNote;
+      }
       else if (st.fail) out.error = `${st.fail} of ${total} requests failed (${st.err})`;
       return out;
     });
