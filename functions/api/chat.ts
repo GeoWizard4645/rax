@@ -11,11 +11,12 @@ import type { AgentActionSpec, AgentContext, AgentParamSpec, ChatRequest, ChatRe
 import { makeToolCtx, type AgentEnv } from '../_lib/agentCtx';
 import { remaining, type BudgetEnv } from '../_lib/budget';
 import { runChat } from '../_lib/chatCore';
+import { byokRoutes, siteRoutes, type ProviderEnv } from '../_lib/providers';
 import { CORS, json, preflight } from '../_lib/http';
 import type { AiBinding } from '../_lib/llm';
 import { rateLimit } from '../_lib/ratelimit';
 
-type ChatEnv = AgentEnv & BudgetEnv & { AI?: AiBinding; CHAT_MODEL?: string };
+type ChatEnv = AgentEnv & BudgetEnv & ProviderEnv & { AI?: AiBinding; CHAT_MODEL?: string };
 
 const MAX_BODY = 80 * 1024;
 
@@ -53,7 +54,8 @@ export const onRequest: PagesFunction<ChatEnv> = async ({ request, env, waitUnti
   if (request.method === 'GET') {
     // cheap status probe for the widget: is the AI on, and how much of today's allowance is left?
     const { frac } = await remaining(env);
-    return json({ ai: !!env.AI, budgetLeft: Math.round(frac * 100) / 100 }, 200, { 'Cache-Control': 'no-store' });
+    const fallbacks = [...new Set(siteRoutes(env).map((r) => r.provider))];
+    return json({ ai: !!env.AI || fallbacks.length > 0, budgetLeft: Math.round(frac * 100) / 100, fallbacks: fallbacks.length }, 200, { 'Cache-Control': 'no-store' });
   }
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, POST, OPTIONS', ...CORS } });
 
@@ -68,10 +70,13 @@ export const onRequest: PagesFunction<ChatEnv> = async ({ request, env, waitUnti
   } catch {
     return reply({ ok: false, code: 'bad_request', message: 'Body must be JSON.' }, 400);
   }
-  if (!env.AI) return reply({ ok: false, code: 'ai_unavailable', message: 'The AI binding is not configured on this deployment.' });
+  // The visitor's own key (header, per request, never stored) and the site's free-tier provider keys (Pages secrets).
+  const byok = byokRoutes(request);
+  const fallbacks = siteRoutes(env);
+  if (!env.AI && !byok.length && !fallbacks.length) return reply({ ok: false, code: 'ai_unavailable', message: 'The AI binding is not configured on this deployment.' });
 
   const input: ChatRequest = { messages: (body.messages ?? []) as ChatRequest['messages'], context: cleanContext(body.context) };
-  const deps = { ai: env.AI, model: env.CHAT_MODEL, tools: makeToolCtx(request, env, (p) => waitUntil(p)), env };
+  const deps = { ai: env.AI, model: env.CHAT_MODEL, byok, fallbacks, tools: makeToolCtx(request, env, (p) => waitUntil(p)), env };
 
   // Streaming transport: newline-delimited JSON — `{"t":"status","text":…}` while it works, then one `{"t":"done","res":ChatResponse}`.
   if ((request.headers.get('Accept') ?? '').includes('application/x-ndjson')) {

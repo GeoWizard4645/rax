@@ -103,7 +103,7 @@ Assistant-settable: `sport` (`NBA NHL MLB WNBA NFL CFB CBB FC UFC`), `bankroll` 
 - **Do calculations** with the site's own code: OTD payouts, rarity ladder, EV/Kelly, odds conversions, de-vig, Rateboard owed Rax, plain arithmetic.
 - **Fetch live data** the same way the site does: upcoming games and odds, schedules.
 - It knows what you've typed or changed on every tab this session (it's shown in the "What I can see" panel in the chat), plus what is saved in your browser for Tabs 7–9.
-- It runs on Cloudflare Workers AI's free tier (a daily allowance). When that's used up it falls back to an offline helper (docs search + navigation + parameter changes) until the allowance resets at 00:00 UTC.
+- It runs on Cloudflare Workers AI's free tier (a daily allowance shared by all visitors). When that's used up it can switch to other free AI providers; if you paste your own free Groq or Gemini key (key icon in the chat header) it uses yours with no limit from this site. If nothing is available it falls back to an offline helper (docs search + navigation + parameter changes) until the allowance resets at 00:00 UTC.
 
 ## MCP server (`/mcp`)
 
@@ -112,6 +112,6 @@ A public, read-only Model Context Protocol server (Streamable HTTP, no auth) so 
 ## Frequently asked
 
 - **Why is a panel labelled SAMPLE DATA?** Real's own API needs a signed-in session, so auction bids, price history and poll percentages can't be pulled; those panels show deterministic sample data, clearly badged.
-- **Where is my data stored?** In your browser (localStorage). Nothing about your cards, entries or bankroll is stored on a server. The assistant sends your question and the context panel's content to Cloudflare Workers AI to answer it, and does not store it.
+- **Where is my data stored?** In your browser (localStorage). Nothing about your cards, entries or bankroll is stored on a server. The assistant sends your question and the context panel's content to Cloudflare Workers AI (or another free AI provider, or the one whose key you added) to answer it, and does not store it. A key you add stays in your browser.
 - **Are the prices real?** Card prices are estimates built from Rateboard's median offers; overwrite any card's price in the Tab 7 table.
 - **Does pushing to GitHub deploy the site?** No — production is deployed by hand with wrangler (see README).

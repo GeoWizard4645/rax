@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Bot, Check, Eye, MessageCircle, SendHorizontal, Square, Trash2, Undo2, X, AlertTriangle } from 'lucide-react';
+import { Bot, Check, Eye, KeyRound, MessageCircle, SendHorizontal, Square, Trash2, Undo2, X, AlertTriangle } from 'lucide-react';
 import { canUndo, describe as describeApp, getVersion, noteRoute, setNavigator, subscribe as subscribeBridge, undo } from '../../agent/bridge';
-import { clear, getState, probe, send, setOpen, stop, subscribe, type UiMsg } from '../../agent/chatClient';
+import { clear, clearOwnKey, getState, OWN_PROVIDERS, probe, send, setOpen, setOwnKey, stop, subscribe, type OwnProvider, type UiMsg } from '../../agent/chatClient';
 import { Markdown } from './Markdown';
 
 const SUGGESTIONS: Record<string, string[]> = {
@@ -27,6 +27,49 @@ function StepChips({ steps }: { steps?: UiMsg['steps'] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function KeyPanel() {
+  const st = useSyncExternalStore(subscribe, getState);
+  const [provider, setProvider] = useState<OwnProvider>(st.own?.provider ?? 'groq');
+  const [key, setKey] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const info = OWN_PROVIDERS[provider];
+  return (
+    <form
+      className="space-y-2 border-b border-line bg-base/60 p-3 text-[11px] text-muted"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const bad = setOwnKey(provider, key);
+        setErr(bad);
+        if (!bad) setKey('');
+      }}
+    >
+      <p>
+        <b className="text-head">Use your own free AI key</b> — no daily limit from this site, and it never counts against the shared allowance. The key stays in this browser
+        (localStorage); each message sends it through this site's server to {st.own ? OWN_PROVIDERS[st.own.provider].label : info.label} for that one request, and it is never stored or logged.
+      </p>
+      {st.own && (
+        <p className="flex items-center gap-2 text-emerald">
+          <Check size={12} /> Using your {OWN_PROVIDERS[st.own.provider].label} key ({st.own.hint}).
+          <button type="button" className="btn-ghost btn-sm ml-auto" onClick={clearOwnKey}>Remove key</button>
+        </p>
+      )}
+      <div className="flex gap-2">
+        <label className="sr-only" htmlFor="rax-key-provider">Provider</label>
+        <select id="rax-key-provider" className="field w-auto" value={provider} onChange={(e) => setProvider(e.target.value as OwnProvider)}>
+          {(Object.keys(OWN_PROVIDERS) as OwnProvider[]).map((p) => <option key={p} value={p}>{OWN_PROVIDERS[p].label}</option>)}
+        </select>
+        <label className="sr-only" htmlFor="rax-key-input">API key</label>
+        <input id="rax-key-input" className="field min-w-0 flex-1" type="password" autoComplete="off" spellCheck={false} placeholder={st.own ? 'Paste a new key to replace it' : 'Paste your API key'} value={key} onChange={(e) => setKey(e.target.value)} />
+        <button className="btn-primary btn-sm" type="submit" disabled={!key.trim()}>Save</button>
+      </div>
+      {err && <p className="text-amber" role="alert">{err}</p>}
+      <p>
+        {info.note} <a className="text-link underline" href={info.keyUrl} target="_blank" rel="noreferrer noopener">Get a free {info.label} key ↗</a>
+      </p>
+    </form>
   );
 }
 
@@ -62,6 +105,7 @@ export default function ChatWidget() {
   const navigate = useNavigate();
   const [draft, setDraft] = useState('');
   const [showCtx, setShowCtx] = useState(false);
+  const [showKey, setShowKey] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -126,12 +170,19 @@ export default function ChatWidget() {
               <h2 className="text-sm font-semibold">RAX Assistant</h2>
               <p className="truncate text-[11px] text-muted">
                 {st.mode === 'ai' ? (
-                  <>Free AI{st.budgetLeft !== undefined ? ` · ${Math.round(st.budgetLeft * 100)}% left today` : ' on Cloudflare'}</>
+                  st.own ? (
+                    <>Your {OWN_PROVIDERS[st.own.provider].label} key · no site limit</>
+                  ) : (
+                    <>Free AI{st.budgetLeft !== undefined ? ` · ${Math.round(st.budgetLeft * 100)}% left today` : ' on Cloudflare'}{st.answeredBy && st.answeredBy !== 'cloudflare' ? ` · via ${st.answeredBy}` : ''}</>
+                  )
                 ) : (
                   <span className="text-amber">Offline mode · {st.offlineReason ?? 'AI unavailable'}</span>
                 )}
               </p>
             </div>
+            <button className="btn-ghost btn-sm" onClick={() => setShowKey((v) => !v)} aria-pressed={showKey} title="Use your own free AI key" aria-label="Use your own free AI key">
+              <KeyRound size={13} />
+            </button>
             <button className="btn-ghost btn-sm" onClick={() => setShowCtx((v) => !v)} aria-pressed={showCtx} title="What the assistant can see">
               <Eye size={13} /> <span className="hidden sm:inline">Context</span>
             </button>
@@ -146,6 +197,7 @@ export default function ChatWidget() {
             </button>
           </header>
 
+          {showKey && <KeyPanel />}
           {showCtx && <ContextPanel />}
 
           <div ref={scroller} className="flex-1 space-y-3 overflow-y-auto px-3 py-3" aria-live="polite" aria-relevant="additions">

@@ -23,13 +23,16 @@ export interface ModelResult {
 }
 
 export class ModelError extends Error {
-  constructor(message: string, readonly kind: 'quota' | 'other' = 'other') {
+  /** quota: Workers AI's daily allocation is spent · rate: a provider 429 (retry after `retryAfter` s) · auth: a rejected API key. */
+  constructor(message: string, readonly kind: 'quota' | 'rate' | 'auth' | 'other' = 'other', readonly retryAfter?: number) {
     super(message);
   }
 }
 
-export const DEFAULT_MODEL = '@cf/google/gemma-4-26b-a4b-it';
-export const FALLBACK_MODEL = '@cf/openai/gpt-oss-20b';
+// Qwen3-30B-A3B: ~half Gemma 4's input price ($0.051 vs $0.100 per M tokens), native function calling, and its thinking mode
+// can be switched off per call. Gemma 4 is the single fallback if Qwen errors.
+export const DEFAULT_MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
+export const FALLBACK_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 
 const asObj = (x: unknown): Record<string, unknown> => (x && typeof x === 'object' ? (x as Record<string, unknown>) : {});
 
@@ -45,8 +48,29 @@ function toToolCall(raw: unknown): ToolCall | null {
   const name = typeof fn.name === 'string' ? fn.name : typeof o.name === 'string' ? o.name : '';
   if (!name) return null;
   const args = fn.arguments ?? o.arguments ?? o.parameters ?? {};
-  return { id: typeof o.id === 'string' && o.id ? o.id : newId(), type: 'function', function: { name, arguments: typeof args === 'string' ? args : JSON.stringify(args) } };
+  // Gemini 3 (OpenAI-compatible endpoint) attaches an opaque thought signature that must be echoed back with the call.
+  const extra = o.extra_content && JSON.stringify(o.extra_content).length < 4000 ? { extra_content: o.extra_content } : {};
+  return { id: typeof o.id === 'string' && o.id ? o.id : newId(), type: 'function', function: { name, arguments: typeof args === 'string' ? args : JSON.stringify(args) }, ...extra };
 }
+
+/**
+ * Qwen3 on Workers AI sometimes emits its call as text — `<tool_call>{"name":…,"arguments":{…}}</tool_call>` — in the content or
+ * (with thinking off) in the reasoning field, leaving `tool_calls` empty. Recover those so the loop still runs the tool.
+ */
+const TOOL_BLOCK = /<tool_call>\s*([\s\S]*?)\s*(?:<\/tool_call>|$)/gi;
+export function textToolCalls(text: string): ToolCall[] {
+  const out: ToolCall[] = [];
+  for (const m of text.matchAll(TOOL_BLOCK)) {
+    try {
+      const c = toToolCall(JSON.parse(m[1]));
+      if (c) out.push(c);
+    } catch {
+      /* not JSON: ignore */
+    }
+  }
+  return out;
+}
+const stripToolText = (s: string) => s.replace(TOOL_BLOCK, '').replace(/<\/?tools?>/gi, '').trim();
 
 export function normalise(raw: unknown): ModelResult {
   const o = asObj(raw);
@@ -59,15 +83,28 @@ export function normalise(raw: unknown): ModelResult {
   const content = typeof contentRaw === 'string' ? contentRaw : Array.isArray(contentRaw) ? contentRaw.map((p) => asObj(p).text ?? '').join('') : '';
   const rawCalls = (Array.isArray(msg.tool_calls) ? msg.tool_calls : Array.isArray(o.tool_calls) ? o.tool_calls : []) as unknown[];
   const neurons = Number(usage.neurons);
-  return { content: stripThinking(content), toolCalls: rawCalls.map(toToolCall).filter((c): c is ToolCall => !!c), promptTokens, completionTokens, ...(Number.isFinite(neurons) && neurons > 0 ? { neurons } : {}) };
+  let toolCalls = rawCalls.map(toToolCall).filter((c): c is ToolCall => !!c);
+  if (!toolCalls.length) {
+    const reasoning = [msg.reasoning_content, msg.reasoning].find((x) => typeof x === 'string') as string | undefined;
+    toolCalls = textToolCalls(`${content}\n${reasoning ?? ''}`);
+  }
+  return { content: stripToolText(stripThinking(content)), toolCalls, promptTokens, completionTokens, ...(Number.isFinite(neurons) && neurons > 0 ? { neurons } : {}) };
 }
 
 /** Only the "you've used the day's free neurons" family — a transient 429 or a subrequest limit must not switch the AI off for the day. */
 const QUOTA = /daily free allocation|free allocation|4006|used up your/i;
 
 export async function runModel(ai: AiBinding, model: string, messages: ChatMessage[], system: string, tools: ModelTool[], maxTokens = 900, think = false): Promise<ModelResult> {
+  const qwen = model.includes('qwen3');
+  const convo = messages.map((m) => ({ ...m, content: m.content ?? '' }));
+  // Qwen3's soft switch: "/no_think" in the newest user turn. (chat_template_kwargs.enable_thinking=false makes Workers AI skip its
+  // tool-call parser, so calls come back as raw text — measured Oct 2026.)
+  if (qwen && !think) {
+    const i = convo.map((m) => m.role).lastIndexOf('user');
+    if (i >= 0) convo[i] = { ...convo[i], content: `${convo[i].content} /no_think` };
+  }
   const input: Record<string, unknown> = {
-    messages: [{ role: 'system', content: system }, ...messages.map((m) => ({ ...m, content: m.content ?? '' }))],
+    messages: [{ role: 'system', content: system }, ...convo],
     max_completion_tokens: maxTokens,
     temperature: 0.2,
   };

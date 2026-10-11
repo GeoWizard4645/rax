@@ -20,7 +20,7 @@ Every panel that can show synthetic data carries a **SAMPLE DATA** badge. Nothin
 ## Assistant & MCP
 
 - **MCP server** — `https://rax.vivaanshahani.com/mcp` (Streamable HTTP, public, read-only). Setup for Instinct, Claude, Cursor, VS Code and stdio-only clients: [docs/MCP.md](docs/MCP.md) or the **MCP** button in the header.
-- **Chat assistant** — bubble bottom-right on every tab; Cloudflare Workers AI (free tier, capped at 8,000 neurons/day by `functions/_lib/budget.ts`), retrieval over Real's docs + these notes, can change tab parameters and undo. [docs/ASSISTANT.md](docs/ASSISTANT.md). Rebuild its knowledge base with `npm run kb`.
+- **Chat assistant** — bubble bottom-right on every tab; Cloudflare Workers AI (Qwen3-30B; free tier, capped at 8,000 neurons/day by `functions/_lib/budget.ts`; optional Groq/Gemini/Cerebras/OpenRouter fallbacks and a bring-your-own-key field), retrieval over Real's docs + these notes, can change tab parameters and undo. [docs/ASSISTANT.md](docs/ASSISTANT.md). Rebuild its knowledge base with `npm run kb`.
 
 ## Develop
 

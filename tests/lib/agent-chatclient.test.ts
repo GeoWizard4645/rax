@@ -104,4 +104,31 @@ describe('chat client', () => {
     client.clear();
     expect(client.getState().msgs).toHaveLength(0);
   });
+
+  it('sends the visitor\'s own key as headers only, never in the body or the saved chat, and can remove it', async () => {
+    const KEY = 'gsk_abcdefghijklmnop1234';
+    const mem = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) });
+    expect(client.setOwnKey('groq', 'short')).toMatch(/does not look like/);
+    expect(client.setOwnKey('groq', KEY)).toBeNull();
+    expect(client.getState().own).toEqual({ provider: 'groq', hint: '…1234' });
+    const fetchMock = vi.fn(async (_u: unknown, _i?: RequestInit) => json({ ok: true, type: 'message', messages: [{ role: 'assistant', content: 'hi' }], model: 'm', provider: 'groq', byok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    await client.send('hello');
+    const init = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'POST')![1] as RequestInit;
+    expect(init.headers).toMatchObject({ 'X-AI-Provider': 'groq', 'X-AI-Key': KEY });
+    expect(String(init.body)).not.toContain(KEY);
+    expect(client.getState().answeredBy).toBe('own');
+    expect(JSON.stringify(localStorage.getItem('rax_chat_v1'))).not.toContain(KEY);
+    client.clearOwnKey();
+    expect(client.getState().own).toBeUndefined();
+    expect(localStorage.getItem('rax_ai_key_v1')).toBeNull();
+  });
+
+  it('shows a rejected key as an error in the chat instead of silently going offline', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ ok: false, code: 'bad_key', message: 'Your Groq key was rejected.' })));
+    await client.send('hi');
+    expect(client.getState().mode).toBe('ai');
+    expect(client.getState().msgs.at(-1)).toMatchObject({ error: true, text: 'Your Groq key was rejected.' });
+  });
 });

@@ -8,7 +8,7 @@ import { resolveTab } from '../../shared/agent/siteMap';
 import { describe as describeApp, note } from './bridge';
 import { describeStep, executeClientTool } from './clientTools';
 import { offlineReply } from './offline';
-import { load, save } from '../lib/storage';
+import { load, remove, save } from '../lib/storage';
 
 export interface Step {
   label: string;
@@ -33,6 +33,39 @@ export interface ChatState {
   offlineReason?: string;
   budgetLeft?: number;
   open: boolean;
+  /** The visitor's own API key, if they set one (the key itself is never in state — only a hint). */
+  own?: { provider: OwnProvider; hint: string };
+  /** The provider that answered last ('cloudflare', 'groq', …). */
+  answeredBy?: string;
+}
+
+export type OwnProvider = 'groq' | 'gemini';
+export const OWN_PROVIDERS: Record<OwnProvider, { label: string; keyUrl: string; note: string }> = {
+  groq: { label: 'Groq', keyUrl: 'https://console.groq.com/keys', note: 'Free tier, fast Llama / gpt-oss models.' },
+  gemini: { label: 'Google Gemini', keyUrl: 'https://aistudio.google.com/apikey', note: 'Free tier — Google may use free-tier prompts to improve its products.' },
+};
+const OWN_KEY = 'rax_ai_key_v1';
+const readOwn = (): { provider: OwnProvider; key: string } | null => {
+  const v = load<{ provider?: string; key?: string } | null>(OWN_KEY, null);
+  return v && (v.provider === 'groq' || v.provider === 'gemini') && typeof v.key === 'string' && v.key.length >= 16 ? { provider: v.provider, key: v.key } : null;
+};
+const ownState = (): ChatState['own'] => {
+  const o = readOwn();
+  return o ? { provider: o.provider, hint: `…${o.key.slice(-4)}` } : undefined;
+};
+/** Keep the key in this browser only (localStorage). Returns an error string when it doesn't look like a key. */
+export function setOwnKey(provider: OwnProvider, key: string): string | null {
+  const k = key.trim();
+  if (!/^[\w.\-]{16,200}$/.test(k)) return 'That does not look like an API key (16+ letters/digits, no spaces).';
+  if (!save(OWN_KEY, { provider, key: k })) return 'Your browser blocked saving the key (private mode?).';
+  probed = false;
+  set({ own: ownState(), ...(state.mode === 'offline' ? { mode: 'ai', offlineReason: undefined } : {}) });
+  return null;
+}
+export function clearOwnKey() {
+  remove(OWN_KEY);
+  probed = false;
+  set({ own: undefined });
 }
 
 /**
@@ -65,7 +98,7 @@ function localConfirmation(calls: ToolCall[], results: unknown[]): string | null
 const KEY = 'rax_chat_v1';
 const MAX_ROUNDS = 5;
 let wire: ChatMessage[] = [];
-let state: ChatState = { msgs: [], busy: false, status: '', mode: 'ai', open: false };
+let state: ChatState = { msgs: [], busy: false, status: '', mode: 'ai', open: false, own: ownState() };
 let abort: AbortController | null = null;
 let probed = false;
 const listeners = new Set<() => void>();
@@ -109,9 +142,9 @@ export async function probe(): Promise<void> {
   probed = true;
   try {
     const r = await fetch('/api/chat');
-    const j = (await r.json()) as { ai?: boolean; budgetLeft?: number };
-    if (!j.ai) set({ mode: 'offline', offlineReason: 'The AI model is not enabled on this deployment.' });
-    else if ((j.budgetLeft ?? 1) <= 0.015) set({ mode: 'offline', offlineReason: "Today's free AI allowance is used up (resets 00:00 UTC).", budgetLeft: 0 });
+    const j = (await r.json()) as { ai?: boolean; budgetLeft?: number; fallbacks?: number };
+    if (!j.ai && !readOwn()) set({ mode: 'offline', offlineReason: 'The AI model is not enabled on this deployment.' });
+    else if ((j.budgetLeft ?? 1) <= 0.015 && !j.fallbacks && !readOwn()) set({ mode: 'offline', offlineReason: "Today's free AI allowance is used up (resets 00:00 UTC).", budgetLeft: 0 });
     else set({ mode: 'ai', offlineReason: undefined, budgetLeft: j.budgetLeft });
   } catch {
     /* offline or dev server without functions: first message will tell us */
@@ -121,10 +154,12 @@ export async function probe(): Promise<void> {
 /* -------------------------------- transport ------------------------------ */
 
 async function post(signal: AbortSignal, onStatus: (s: string) => void): Promise<ChatResponse> {
+  const own = readOwn();
   const res = await fetch('/api/chat', {
     method: 'POST',
     signal,
-    headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
+    // the visitor's own key rides along per request; the server forwards it to the provider and never stores it
+    headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson', ...(own ? { 'X-AI-Provider': own.provider, 'X-AI-Key': own.key } : {}) },
     body: JSON.stringify({ messages: wire.slice(-30), context: describeApp() }),
   });
   if (res.status === 404 || res.status === 405) return { ok: false, code: 'ai_unavailable', message: 'The assistant service is not available here.' };
@@ -192,7 +227,7 @@ export async function send(text: string): Promise<void> {
       const res = await post(signal, (s) => set({ status: s }));
       if (!res.ok) {
         wire.length = startLen; // drop the unanswered turn from the wire history; the offline helper re-adds it
-        if (res.code === 'rate_limited') {
+        if (res.code === 'rate_limited' || res.code === 'bad_key') {
           pushMsg({ role: 'assistant', text: res.message, error: true });
           return;
         }
@@ -200,7 +235,7 @@ export async function send(text: string): Promise<void> {
         return;
       }
       wire.push(...res.messages);
-      set({ budgetLeft: res.budgetLeft, mode: 'ai', offlineReason: undefined });
+      set({ budgetLeft: res.budgetLeft, mode: 'ai', offlineReason: undefined, answeredBy: res.byok ? 'own' : res.provider });
       // server-side tool results (docs, maths, …) arrive as tool messages next to their calls: turn them into chips
       const byId = new Map(res.messages.filter((m) => m.role === 'tool').map((m) => [m.tool_call_id, m]));
       for (const m of res.messages) {

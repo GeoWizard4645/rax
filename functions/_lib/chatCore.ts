@@ -11,13 +11,20 @@ import { CLIENT_TOOL_NAMES, CLIENT_TOOLS } from '../../shared/agent/clientTools'
 import { runTool, TOOLS, type ToolCtx } from '../../shared/agent/tools';
 import type { ChatMessage, ChatRequest, ChatResponse, ToolCall } from '../../shared/agent/types';
 import { estimateNeurons, exhaust, record, remaining, RESERVE, type BudgetEnv } from './budget';
-import { DEFAULT_MODEL, FALLBACK_MODEL, ModelError, runModel, type AiBinding, type ModelTool } from './llm';
+import { DEFAULT_MODEL, FALLBACK_MODEL, ModelError, runModel, type AiBinding, type ModelResult, type ModelTool } from './llm';
+import { isParked, park, PROVIDERS, runRoute, type Route } from './providers';
 
 export const MAX_ITERATIONS = 4;
 const MAX_HISTORY = 14;
 const LIMITS = { user: 2000, assistant: 3000, tool: 3500 } as const;
 
 const asString = (x: unknown) => (typeof x === 'string' ? x : x == null ? '' : JSON.stringify(x));
+
+/** Keep only Gemini's `{google:{thought_signature}}` extra, and only if it's a string of sane size. */
+function signature(call: unknown): { extra_content?: unknown } {
+  const sig = ((call as { extra_content?: { google?: { thought_signature?: unknown } } })?.extra_content?.google?.thought_signature);
+  return typeof sig === 'string' && sig.length > 0 && sig.length < 4000 ? { extra_content: { google: { thought_signature: sig } } } : {};
+}
 
 /** Never trust the history the browser sends: roles, sizes and tool-call pairing are all re-checked. */
 export function sanitizeMessages(input: unknown): ChatMessage[] {
@@ -32,7 +39,7 @@ export function sanitizeMessages(input: unknown): ChatMessage[] {
         ? (m.tool_calls as unknown[]).flatMap((c): ToolCall[] => {
             const o = (c ?? {}) as { id?: unknown; function?: { name?: unknown; arguments?: unknown } };
             return typeof o.id === 'string' && typeof o.function?.name === 'string'
-              ? [{ id: o.id.slice(0, 80), type: 'function', function: { name: o.function.name.slice(0, 60), arguments: asString(o.function.arguments).slice(0, 4000) } }]
+              ? [{ id: o.id.slice(0, 80), type: 'function', function: { name: o.function.name.slice(0, 60), arguments: asString(o.function.arguments).slice(0, 4000) }, ...signature(c) }]
               : [];
           })
         : [];
@@ -72,8 +79,12 @@ const MODEL_TOOLS: ModelTool[] = [
 const SERVER_TOOL_NAMES = new Set(TOOLS.filter((t) => t.chat).map((t) => t.name));
 
 export interface ChatDeps {
-  ai: AiBinding;
+  /** Workers AI; absent when the site runs on provider keys only. */
+  ai?: AiBinding;
   model?: string;
+  /** The visitor's own key routes (tried first, no neuron budget) followed by the site's fallback providers (tried after Workers AI). */
+  byok?: Route[];
+  fallbacks?: Route[];
   tools: ToolCtx;
   env: BudgetEnv;
   now?: number;
@@ -122,51 +133,98 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
   if (!history.length || history[history.length - 1].role === 'assistant') return { ok: false, code: 'bad_request', message: 'Send a user message.' };
 
   let model = deps.model || DEFAULT_MODEL;
+  let provider = 'cloudflare';
+  let viaByok = false;
   const system = buildSystemPrompt(req.context, await passagesFor(req, history, deps.tools));
   const added: ChatMessage[] = [];
-  let usedFallback = false;
 
   const budgetLeft = async () => (await remaining(deps.env, now)).frac;
-  const done = async (type: 'message' | 'tool_calls', calls?: ToolCall[]): Promise<ChatResponse> => ({ ok: true, type, messages: added, ...(calls ? { calls } : {}), model, budgetLeft: Math.round((await budgetLeft()) * 100) / 100 });
+  const done = async (type: 'message' | 'tool_calls', calls?: ToolCall[]): Promise<ChatResponse> => ({ ok: true, type, messages: added, ...(calls ? { calls } : {}), model, provider, ...(viaByok ? { byok: true } : {}), budgetLeft: Math.round((await budgetLeft()) * 100) / 100 });
+
+  /**
+   * One model call, walking the fallback chain: the visitor's own key → Workers AI (while today's free neurons last) → the site's
+   * free-tier providers. A rejected visitor key stops the chain (they should hear about it); anything else moves to the next route.
+   */
+  type Failure = { ok: false; res: ChatResponse };
+  const callModel = async (convo: ChatMessage[], sys: string, tools: ModelTool[], maxTokens: number, think: boolean): Promise<ModelResult | Failure> => {
+    let lastError = '';
+    let sawBudget = false;
+    const viaRoute = async (r: Route): Promise<ModelResult | null> => {
+      if (isParked(r, now)) return null;
+      try {
+        const out = await runRoute(r, convo, sys, tools, maxTokens, think);
+        model = r.model;
+        provider = r.provider;
+        viaByok = r.byok;
+        return out;
+      } catch (e) {
+        if (!(e instanceof ModelError)) throw e;
+        lastError = e.message;
+        if (e.kind === 'auth') {
+          if (r.byok) throw e;
+          park(r, 3600, now); // a bad site key: stop hammering it
+        } else if (e.kind === 'rate') park(r, e.retryAfter ?? 60, now);
+        return null;
+      }
+    };
+    for (const r of deps.byok ?? []) {
+      try {
+        const out = await viaRoute(r);
+        if (out) return out;
+      } catch (e) {
+        return { ok: false, res: { ok: false, code: 'bad_key', message: `Your ${PROVIDERS[r.provider].label} key was rejected — check it in the assistant settings. (${clip((e as Error).message, 160)})` } };
+      }
+    }
+    if (deps.ai) {
+      if ((await remaining(deps.env, now)).left >= RESERVE) {
+        const models = [deps.model || DEFAULT_MODEL, FALLBACK_MODEL].filter((m, i, a) => a.indexOf(m) === i);
+        for (const m of models) {
+          try {
+            const out = await runModel(deps.ai, m, convo, sys, tools, maxTokens, think);
+            await record(deps.env, out.neurons ?? estimateNeurons(m, out.promptTokens, out.completionTokens), now);
+            model = m;
+            provider = 'cloudflare';
+            viaByok = false;
+            return out;
+          } catch (e) {
+            if (!(e instanceof ModelError)) throw e;
+            lastError = e.message;
+            if (e.kind === 'quota') {
+              await exhaust(deps.env, now);
+              sawBudget = true;
+              break;
+            }
+          }
+        }
+      } else sawBudget = true;
+    }
+    for (const r of deps.fallbacks ?? []) {
+      const out = await viaRoute(r);
+      if (out) return out;
+    }
+    if (sawBudget || !lastError) return { ok: false, res: { ok: false, code: 'budget', message: "Today's free AI allowance is used up — it resets at 00:00 UTC." } };
+    return { ok: false, res: { ok: false, code: 'model_error', message: `The AI model failed: ${clip(lastError, 200)}` } };
+  };
 
   for (let iter = 0; iter < MAX_ITERATIONS + 1; iter++) {
-    const { left } = await remaining(deps.env, now);
-    if (left < RESERVE) return { ok: false, code: 'budget', message: "Today's free AI allowance is used up — it resets at 00:00 UTC." };
     const final = iter === MAX_ITERATIONS; // out of tool rounds: force a plain answer
-    let res;
     deps.onStatus?.(iter === 0 ? 'Thinking…' : 'Putting it together…');
     const convo = [...history, ...added];
-    let think = false;
-    try {
-      // Reasoning stays ON except for pure page commands / greetings: with it off the model once quoted a wrong multiplier from a
-      // retrieved passage and once reported a +EV result as "not +EV". The cost is ~2 s and ~3 neurons per call.
-      const last = convo[convo.length - 1];
-      const lite = last?.role === 'user' && (COMMAND.test(last.content ?? '') || GREETING.test(last.content ?? '')) && !/\b(why|how|what|explain|tell me|\?)/i.test(last.content ?? '');
-      think = final || !lite;
-      res = await runModel(deps.ai, model, convo, final ? `${system}\n\nAnswer now using what you have; do not call tools.` : system, final ? [] : MODEL_TOOLS, think ? 1500 : 900, think);
-    } catch (e) {
-      if (e instanceof ModelError && e.kind === 'quota') {
-        await exhaust(deps.env, now);
-        return { ok: false, code: 'budget', message: "Today's free AI allowance is used up — it resets at 00:00 UTC." };
-      }
-      if (!usedFallback && model !== FALLBACK_MODEL) {
-        usedFallback = true;
-        model = FALLBACK_MODEL;
-        iter--;
-        continue;
-      }
-      return { ok: false, code: 'model_error', message: `The AI model failed: ${e instanceof Error ? clip(e.message, 200) : 'unknown error'}` };
-    }
-    await record(deps.env, res.neurons ?? estimateNeurons(model, res.promptTokens, res.completionTokens), now);
+    // Reasoning stays ON except for pure page commands / greetings: with it off the model once quoted a wrong multiplier from a
+    // retrieved passage and once reported a +EV result as "not +EV". The cost is ~2 s and ~3 neurons per call.
+    const last = convo[convo.length - 1];
+    const lite = last?.role === 'user' && (COMMAND.test(last.content ?? '') || GREETING.test(last.content ?? '')) && !/\b(why|how|what|explain|tell me|\?)/i.test(last.content ?? '');
+    const think = final || !lite;
+    const sys = final ? `${system}\n\nAnswer now using what you have; do not call tools.` : system;
+    const tools = final ? [] : MODEL_TOOLS;
+    const first = await callModel(convo, sys, tools, think ? 1500 : 900, think);
+    if ('ok' in first) return first.res;
+    let res = first;
     if (!res.toolCalls.length && !res.content && think) {
       // the reasoning ate the whole token budget and nothing was said: ask once more with reasoning off
       deps.onStatus?.('Putting it together…');
-      try {
-        res = await runModel(deps.ai, model, convo, final ? `${system}\n\nAnswer now using what you have; do not call tools.` : system, final ? [] : MODEL_TOOLS, 900, false);
-        await record(deps.env, res.neurons ?? estimateNeurons(model, res.promptTokens, res.completionTokens), now);
-      } catch {
-        /* fall through to the generic reply below */
-      }
+      const again = await callModel(convo, sys, tools, 900, false);
+      if (!('ok' in again)) res = again;
     }
 
     if (!res.toolCalls.length || final) {

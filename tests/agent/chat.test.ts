@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { remaining, testing } from '../../functions/_lib/budget';
 import { MAX_ITERATIONS, parseArgs, runChat, sanitizeMessages } from '../../functions/_lib/chatCore';
 import { buildSystemPrompt, renderContext } from '../../shared/agent/prompt';
@@ -146,11 +146,11 @@ describe('budget + failure handling', () => {
   it('counts neurons from usage and reports what is left', async () => {
     const e = env();
     const { res } = await run([say('hi', { prompt_tokens: 100_000, completion_tokens: 0 })], [user('hello')], e);
-    // 100k prompt tokens × 9091 neurons/M ≈ 909 neurons of 8000
+    // 100k prompt tokens × 4625 neurons/M (Qwen3-30B-A3B) ≈ 463 neurons of 8000
     const { left } = await remaining(e);
-    expect(left).toBeGreaterThan(7000);
-    expect(left).toBeLessThan(7200);
-    expect(res.ok && res.budgetLeft).toBeCloseTo(0.89, 1);
+    expect(left).toBeGreaterThan(7400);
+    expect(left).toBeLessThan(7650);
+    expect(res.ok && res.budgetLeft).toBeCloseTo(0.94, 1);
   });
 
   it('stops calling the model once the daily cap is reached', async () => {
@@ -173,8 +173,8 @@ describe('budget + failure handling', () => {
   it('falls back to the second model once on a generic failure', async () => {
     const boom = () => { throw new Error('model overloaded'); };
     const { res, ai } = await run([boom, say('from fallback')], [user('hi')]);
-    expect(ai.calls.map((c) => c.model)).toEqual(['@cf/google/gemma-4-26b-a4b-it', '@cf/openai/gpt-oss-20b']);
-    expect(res.ok && res.model).toBe('@cf/openai/gpt-oss-20b');
+    expect(ai.calls.map((c) => c.model)).toEqual(['@cf/qwen/qwen3-30b-a3b-fp8', '@cf/google/gemma-4-26b-a4b-it']);
+    expect(res.ok && res.model).toBe('@cf/google/gemma-4-26b-a4b-it');
   });
 
   it('gives up cleanly when both models fail', async () => {
@@ -186,6 +186,19 @@ describe('budget + failure handling', () => {
   it('strips inline reasoning from answers', async () => {
     const { res } = await run([say('<think>hmm let me see</think>The answer is 4.')], [user('2+2')]);
     expect(res.ok && res.messages.at(-1)!.content).toBe('The answer is 4.');
+  });
+});
+
+describe('Qwen output quirks', () => {
+  it('recovers a tool call the model wrote as text in the reasoning field (thinking off)', async () => {
+    const textual = () => ({ choices: [{ message: { content: null, reasoning_content: '<tool_call>\n{"name": "calculate", "arguments": {"expression": "2+2"}}\n</tool_call>' } }], usage: { prompt_tokens: 200, completion_tokens: 30 } });
+    const { res } = await run([textual, say('It is 4.')], [user('what is 2+2? use the calculator')]);
+    expect(res.ok && res.messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'assistant']);
+    expect(res.ok && res.messages[0].tool_calls![0].function.name).toBe('calculate');
+  });
+  it('strips stray tool markup from visible answers', async () => {
+    const { res } = await run([say('The rake is 5%.\n\n<tools>')], [user('what is the rake?')]);
+    expect(res.ok && res.messages.at(-1)!.content).toBe('The rake is 5%.');
   });
 });
 
@@ -206,6 +219,12 @@ describe('tool-argument parsing', () => {
   });
 });
 
+/** Qwen3 is switched with a "/no_think" soft switch on the newest user turn; Gemma 4 with chat_template_kwargs. */
+const thinks = (c: { model: string; input: any }): boolean => {
+  if (c.model.includes('qwen3')) return !/\/no_think$/.test([...c.input.messages].reverse().find((m: any) => m.role === 'user').content);
+  return c.input.chat_template_kwargs.enable_thinking;
+};
+
 describe('prompt economy', () => {
   it('skips doc retrieval for pure commands but not for questions about them', async () => {
     const cmd = await run([say('ok')], [user('set the budget to 50k')]);
@@ -215,11 +234,12 @@ describe('prompt economy', () => {
   });
   it('thinks by default, but not for pure page commands or greetings; terse tool descriptions', async () => {
     const q = await run([say('ok')], [user('what multiplier does mystic 10 have?')]);
-    expect(q.ai.calls[0].input.chat_template_kwargs).toEqual({ enable_thinking: true });
+    expect(thinks(q.ai.calls[0])).toBe(true);
+    expect(q.ai.calls[0].input.chat_template_kwargs).toBeUndefined(); // kwargs would disable Workers AI's tool-call parser for Qwen
     const cmd = await run([say('ok')], [user('set the budget to 50k')]);
-    expect(cmd.ai.calls[0].input.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(thinks(cmd.ai.calls[0])).toBe(false);
     const hi = await run([say('ok')], [user('hello')]);
-    expect(hi.ai.calls[0].input.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(thinks(hi.ai.calls[0])).toBe(false);
     const calc = hi.ai.calls[0].input.tools.find((t: any) => t.function.name === 'calculate');
     expect(calc.function.description.length).toBeLessThan(150);
   });
@@ -250,7 +270,100 @@ describe('empty reasoning-only replies', () => {
   it('retries once with reasoning off when the model produced no text', async () => {
     const empty = () => ({ choices: [{ message: { content: '' } }], usage: { prompt_tokens: 10, completion_tokens: 900 } });
     const { res, ai } = await run([empty, say('Here is the answer.')], [user('what is the cap on Mystic 10?')]);
-    expect(ai.calls.map((c) => c.input.chat_template_kwargs.enable_thinking)).toEqual([true, false]);
+    expect(ai.calls.map(thinks)).toEqual([true, false]);
     expect(res.ok && res.messages.at(-1)!.content).toBe('Here is the answer.');
+  });
+});
+
+
+describe('provider fallbacks + bring-your-own-key', () => {
+  const ok = (content: string, tool_calls?: unknown[]) => new Response(JSON.stringify({ choices: [{ message: { content, ...(tool_calls ? { tool_calls } : {}) } }], usage: { prompt_tokens: 500, completion_tokens: 50 } }), { status: 200 });
+  const fail = (status: number, message: string, headers: Record<string, string> = {}) => new Response(JSON.stringify({ error: { message } }), { status, headers });
+  const seen: Array<{ url: string; auth: string; body: any }> = [];
+  let handler: (url: string, n: number) => Response = () => ok('x');
+  beforeEach(async () => {
+    seen.length = 0;
+    (await import('../../functions/_lib/providers')).resetParked();
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      seen.push({ url, auth: String((init.headers as Record<string, string>).Authorization), body: JSON.parse(String(init.body)) });
+      return handler(url, seen.length);
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const routes = async (e: Record<string, string>) => (await import('../../functions/_lib/providers')).siteRoutes(e);
+  const KEY = 'gsk_abcdefghijklmnop1234';
+
+  it('falls through to a site provider when the daily neurons are gone', async () => {
+    handler = () => ok('from groq');
+    const e = { AI_DAILY_NEURONS: '100', GROQ_API_KEY: KEY };
+    await run([say('x', { prompt_tokens: 20_000, completion_tokens: 0 })], [user('one')], e);
+    const res = await runChat({ messages: [user('two')], context: ctx }, { ai: fakeAi([say('never')]), tools: toolCtx(), env: e, fallbacks: await routes(e) });
+    expect(res).toMatchObject({ ok: true, provider: 'groq', model: 'llama-3.3-70b-versatile' });
+    expect(seen[0].url).toBe('https://api.groq.com/openai/v1/chat/completions');
+  });
+
+  it('parks a rate-limited model and tries the next one on the same provider', async () => {
+    handler = (_u, n) => (n === 1 ? fail(429, 'Rate limit reached for model', { 'retry-after': '30' }) : ok('second model'));
+    const e = { GROQ_API_KEY: KEY, AI_DAILY_NEURONS: '0.5' };
+    const res = await runChat({ messages: [user('hi')], context: ctx }, { tools: toolCtx(), env: e, fallbacks: await routes(e) });
+    expect(res).toMatchObject({ ok: true, model: 'openai/gpt-oss-20b' });
+    expect(seen.map((s) => s.body.model)).toEqual(['llama-3.3-70b-versatile', 'openai/gpt-oss-20b']);
+    // the first model stays parked for the next request
+    seen.length = 0;
+    await runChat({ messages: [user('again')], context: ctx }, { tools: toolCtx(), env: e, fallbacks: await routes(e) });
+    expect(seen.map((s) => s.body.model)).toEqual(['openai/gpt-oss-20b']);
+  });
+
+  it("uses the visitor's own key first, skips the neuron budget, and never lets the key leak into errors", async () => {
+    handler = () => ok('on my key');
+    const { byokRoutes } = await import('../../functions/_lib/providers');
+    const req = new Request('https://x', { headers: { 'X-AI-Provider': 'groq', 'X-AI-Key': KEY } });
+    const e = { AI_DAILY_NEURONS: '0.5' }; // the shared allowance is already spent
+    const ai = fakeAi([say('never')]);
+    const res = await runChat({ messages: [user('hi')], context: ctx }, { ai, tools: toolCtx(), env: e, byok: byokRoutes(req) });
+    expect(res).toMatchObject({ ok: true, byok: true, provider: 'groq' });
+    expect(seen[0].auth).toBe(`Bearer ${KEY}`);
+    expect(ai.calls).toHaveLength(0);
+    expect(await remaining(e)).toMatchObject({ left: 0.5 });
+    handler = () => fail(401, `Invalid API Key ${KEY}`);
+    const bad = await runChat({ messages: [user('hi')], context: ctx }, { ai, tools: toolCtx(), env: e, byok: byokRoutes(req) });
+    expect(bad).toMatchObject({ ok: false, code: 'bad_key' });
+    expect(JSON.stringify(bad)).not.toContain(KEY);
+  });
+
+  it('ignores malformed or unsupported BYOK headers', async () => {
+    const { byokRoutes } = await import('../../functions/_lib/providers');
+    const h = (provider: string, key: string) => byokRoutes(new Request('https://x', { headers: { 'X-AI-Provider': provider, 'X-AI-Key': key } }));
+    expect(h('groq', 'short')).toEqual([]);
+    expect(h('groq', 'has spaces in the key value here')).toEqual([]);
+    expect(h('cerebras', KEY)).toEqual([]); // site-only provider
+    expect(h('evil', KEY)).toEqual([]);
+    expect(h('gemini', 'AIzaSyAbcdefghijklmnopqrstuv')).toHaveLength(2);
+  });
+
+  it('keeps Gemini thought signatures on tool calls and adds the bypass for history from other models', async () => {
+    const { byokRoutes } = await import('../../functions/_lib/providers');
+    const req = new Request('https://x', { headers: { 'X-AI-Provider': 'gemini', 'X-AI-Key': 'AIzaSyAbcdefghijklmnopqrstuv' } });
+    handler = (_u, n) => (n === 1
+      ? ok('', [{ id: 'g1', type: 'function', function: { name: 'calculate', arguments: '{"expression":"2+2"}' }, extra_content: { google: { thought_signature: 'SIG123' } } }])
+      : ok('4'));
+    const res = await runChat({ messages: [user('what is 2+2? use the calculator')], context: ctx }, { tools: toolCtx(), env: env(), byok: byokRoutes(req) });
+    expect(res.ok && res.messages[0].tool_calls![0].extra_content).toEqual({ google: { thought_signature: 'SIG123' } });
+    const second = seen[1].body.messages.find((m: any) => m.tool_calls);
+    expect(second.tool_calls[0].extra_content.google.thought_signature).toBe('SIG123');
+    // a call that has no signature (it came from Qwen) gets Google's documented bypass; other providers never see extra_content
+    seen.length = 0;
+    const hist: ChatMessage[] = [user('q'), { role: 'assistant', content: '', tool_calls: [{ id: 'a', type: 'function', function: { name: 'calculate', arguments: '{}' } }] }, { role: 'tool', tool_call_id: 'a', content: '{}' }, user('next')];
+    handler = () => ok('fine');
+    await runChat({ messages: hist, context: ctx }, { tools: toolCtx(), env: env(), byok: byokRoutes(req) });
+    expect(seen[0].body.messages.find((m: any) => m.tool_calls).tool_calls[0].extra_content.google.thought_signature).toBe('skip_thought_signature_validator');
+  });
+
+  it('puts Gemini last in the site fallback order and honours PROVIDER_FALLBACKS', async () => {
+    const all = await routes({ GROQ_API_KEY: KEY, GEMINI_API_KEY: KEY, CEREBRAS_API_KEY: KEY });
+    expect([...new Set(all.map((r) => r.provider))]).toEqual(['groq', 'cerebras', 'gemini']);
+    expect(await routes({ GROQ_API_KEY: KEY, GEMINI_API_KEY: KEY, PROVIDER_FALLBACKS: 'off' })).toEqual([]);
+    expect([...new Set((await routes({ GROQ_API_KEY: KEY, GEMINI_API_KEY: KEY, PROVIDER_FALLBACKS: 'gemini' })).map((r) => r.provider))]).toEqual(['gemini']);
   });
 });

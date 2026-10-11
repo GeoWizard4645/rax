@@ -50,6 +50,8 @@ export interface ToolCall {
   id: string;
   type: 'function';
   function: { name: string; arguments: string };
+  /** Provider-specific passthrough (Gemini 3's `{google:{thought_signature}}`), echoed back untouched. */
+  extra_content?: unknown;
 }
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'tool';
@@ -73,7 +75,10 @@ export type ChatResponse =
       messages: ChatMessage[];
       calls?: ToolCall[];
       model: string;
+      /** Who answered: 'cloudflare', 'groq', 'gemini', … (`byok` when it used the visitor's own key). */
+      provider?: string;
+      byok?: boolean;
       /** Rough share of today's free AI allowance left (0–1), for the UI. */
       budgetLeft?: number;
     }
-  | { ok: false; code: 'budget' | 'rate_limited' | 'ai_unavailable' | 'bad_request' | 'model_error'; message: string; retryAfter?: number };
+  | { ok: false; code: 'budget' | 'rate_limited' | 'ai_unavailable' | 'bad_request' | 'model_error' | 'bad_key'; message: string; retryAfter?: number };
