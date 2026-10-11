@@ -118,14 +118,18 @@ Kalshi answers Cloudflare's shared egress IPs with **HTTP 429** (checked 2026-10
 
 **It is a loop, not a cron.** GitHub's `*/10` cron turned out to be best-effort (runs 5½ h apart on 2026-10-11, so "live" Kalshi was an hour old). Now one job loops for ~5 h 50 m, snapshotting about every 40 s, then starts its successor with `gh workflow run` (a `workflow_dispatch` made with `GITHUB_TOKEN` is allowed to trigger a run); an hourly cron and manual dispatch are only a backup if the chain breaks (`concurrency: odds-snapshot`, never cancel the running loop). It exits after 30 consecutive failures instead of burning minutes while Kalshi is down. Only sports with a game live or starting within ~8 h are refreshed every cycle, the rest every 5 min, and payloads are slimmed to the fields `parseKalshi` reads (≈ 0.7 MB for everything vs 3.4 MB).
 
-`/api/odds/events` tries Kalshi live first; if every live call fails it reads `raw.githubusercontent.com/GeoWizard4645/rax/odds-data/kalshi/<SPORT>.json?t=<30 s bucket>` (1 subrequest, reserved in the budget; the query string defeats raw.githubusercontent's ~5 min cache) and rejects anything older than 3 h. Single-sport requests only. How the age is shown and used:
+**Two copies, fastest first.** Each cycle the loop (1) `POST`s every changed sport file to `https://rax-super-suite.pages.dev/api/odds/kalshi-push?sport=…` (`functions/api/odds/kalshi-push.ts`, bearer secret `KALSHI_PUSH_SECRET`, stored one row per sport in the D1 database `rax-odds`, binding `ODDS_DB`, schema in `migrations/`), and (2) force-pushes the orphan branch. It uses the **pages.dev host on purpose**: the custom domain's Cloudflare bot rules answer GitHub runners with a managed challenge (HTTP 403 `cf-mitigated: challenge`). `raw.githubusercontent.com` is only the fallback — it caches every file for 5 min and ignores query strings (tested), so on its own it could never be fresher than ~5 min.
+
+`/api/odds/events` tries Kalshi live first; if every live call fails it reads the D1 row (else the branch copy; 1 subrequest-equivalent, reserved in the budget) and rejects anything older than 3 h. Single-sport requests only. How the age is shown and used:
 
 - ≤ 5 min old: `sources[].note` ("snapshot taken 40 s ago") — the chip stays **ok**.
 - > 5 min: `sources[].error` ("… — STALE") — chip **partial**.
 - Older than **150 s** (`LIVE_SNAPSHOT_MAX_AGE_SEC`): Kalshi prices are **hidden for games in progress** (a live price moves every play); pre-game games keep them.
 - Every Kalshi `OddsMarket.updatedAt` is the real quote time (live fetch or the snapshot's `generatedAt`) — Kalshi's own `updated_time` is not a quote time.
 
-If the repo goes private, raw.githubusercontent.com needs auth **and** a 24/7 loop would cost Actions minutes (2000/month free) — the fallback stops being free. Start/restart the loop by hand: `gh workflow run odds-snapshot.yml`.
+Setup (already done): `wrangler d1 create rax-odds` + `wrangler d1 execute rax-odds --remote --file migrations/0001_kalshi_snapshot.sql`; the same random secret as a GitHub Actions secret and a Pages secret (`wrangler pages secret put KALSHI_PUSH_SECRET --project-name rax-super-suite`, then redeploy). Free tier: ~9 D1 row writes per cycle at most, well under 100k/day.
+
+If the repo goes private, a 24/7 loop would cost Actions minutes (2000/month free) and the branch fallback would need auth — it stops being free. Start/restart the loop by hand: `gh workflow run odds-snapshot.yml`.
 
 ## Optional: FanDuel / DraftKings / Real % from the user's own RaxEdge export (client-side, opt-in)
 
