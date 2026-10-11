@@ -27,6 +27,7 @@ export default function LimitationsBanner() {
               <li>Auction bids, card price history, spikes and forecasts (Tabs 2–3) — no Rateboard route carries them, and Real's own API needs a signed-in app session, so nothing is pulled from it.</li>
               <li>Tab 4 covers NFL, NBA, MLB, NHL, college football / basketball and golf only — not soccer, WNBA or UFC — and falls back to sample games if the feed is down.</li>
               <li>Poll percentages, game pace and polls-per-game (Tab 6) — estimates.</li>
+              <li>Tabs 7–8: earnings come from a dated snapshot of Real's per-game Rax; card prices are estimates (Real publishes none). A username pull only knows players and total rating, not each pass's level.</li>
             </ul>
           </div>
           <div>
