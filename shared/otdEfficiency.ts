@@ -15,7 +15,7 @@ import type { OtdCardRecord, OtdSport } from './otdSnapshot';
 export interface WindowSpec {
   /** First day of the window (UTC date). */
   start: Date;
-  /** Number of days, 1–365 (a longer window would count the same anniversary twice). */
+  /** Number of days, 1–366 (windows never repeat an anniversary: a year-long window ends before it would). */
   days: number;
 }
 
@@ -48,14 +48,21 @@ export function payoutScale(card: OtdCardRecord, p: Pick<EfficiencyParams, 'mult
   return l.multiplier * capFactor(card, l.multiplier, l.annualCap);
 }
 
-/** The mmdd of every day in the window, in order. */
+/**
+ * The mmdd of every day in the window, in order. At most 366 days, and it stops before an mmdd would repeat, so a
+ * calendar year gives 365 keys (366 in a leap year) and a longer window never counts an anniversary twice.
+ */
 export function windowKeys(w: WindowSpec): number[] {
   const out: number[] = [];
-  const n = Math.max(1, Math.min(365, Math.floor(w.days)));
+  const seen = new Set<number>();
+  const n = Math.max(1, Math.min(366, Math.floor(w.days)));
   const t0 = Date.UTC(w.start.getUTCFullYear(), w.start.getUTCMonth(), w.start.getUTCDate());
   for (let i = 0; i < n; i++) {
     const d = new Date(t0 + i * DAY_MS);
-    out.push((d.getUTCMonth() + 1) * 100 + d.getUTCDate());
+    const k = (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+    if (seen.has(k)) break;
+    seen.add(k);
+    out.push(k);
   }
   return out;
 }
@@ -124,7 +131,7 @@ export function rankCards(cards: OtdCardRecord[], p: EfficiencyParams): CardRow[
 
 export interface PortfolioPick {
   row: CardRow;
-  /** Extra earnings this card adds in the window given the cards chosen before it. */
+  /** Extra objective value this card adds given the cards before it (earnings; in min-overlap mode net of overlap waste). */
   marginal: number;
   /** Cost counted against the window (price × sunkFraction). */
   netCost: number;
@@ -160,122 +167,320 @@ export interface Portfolio {
   /** Σ empty slots across the window (days × pools you could still fill). */
   emptySlots: number;
   stoppedBecause: 'budget' | 'count' | 'no-gain' | 'candidates';
+  /** The value the optimizer maximised: earnings − overlapPenalty × wasted. */
+  objective: number;
+  /** Objective of the plain greedy pass, before local-search refinement (≤ `objective`). */
+  greedyObjective: number;
+  mode: OverlapMode;
 }
+
+/**
+ * 'earnings'    — maximise claimable payout; overlaps only matter through the claims they cost you.
+ * 'min-overlap' — payout your cards can't claim (the sport's daily slots are already taken) counts AGAINST the set, so it
+ *                 prefers cards covering different days even when that costs some total.
+ */
+export type OverlapMode = 'earnings' | 'min-overlap';
 
 export interface PortfolioOptions {
   /** Total Rax to spend (Infinity = no limit). */
   budget: number;
   /** Max cards to buy. */
   maxCards: number;
-  /** Stop when the best remaining marginal ROI falls below this (earn per Rax of net cost over the window). */
+  /** Don't add a card whose extra earnings ÷ net cost is below this (earn per Rax of net cost over the window). */
   minMarginalRoi: number;
   /** Cards already held (cost 0, always in the set, listed first). */
   ownedIds?: ReadonlySet<string>;
   /** Ignore cards pricier than this. */
   maxPricePerCard?: number;
+  /** Default 'earnings'. */
+  overlapMode?: OverlapMode;
+  /** Weight of wasted payout in 'min-overlap' mode (default 1). Ignored in 'earnings' mode. */
+  overlapPenalty?: number;
+  /** Run add / drop / swap local search after the greedy passes (default true). */
+  refine?: boolean;
 }
 
 const poolOf = (p: EfficiencyParams, sport: OtdSport) => (p.scope === 'global' ? 'ALL' : sport);
 
-/** Value-per-slot structure: for each pool|mmdd, the best `claimsPerDay` payouts of the chosen cards. */
+interface Entry {
+  i: number;
+  v: number;
+}
+interface SlotState {
+  list: Entry[]; // best first
+  top: number;
+  total: number;
+}
+
+/** Per-(pool, day) claim slots holding every chosen card's payout, with O(1) marginal-gain queries. */
 class SlotBoard {
-  private m = new Map<string, number[]>();
-  constructor(private cap: number) {}
-  private k = (pool: string, d: number) => `${pool}|${d}`;
-  /** Gain from adding value v to that slot. */
-  gain(pool: string, d: number, v: number): number {
-    const a = this.m.get(this.k(pool, d));
-    if (!a || a.length < this.cap) return v;
-    const worst = a[a.length - 1];
-    return v > worst ? v - worst : 0;
+  private m = new Map<number, SlotState>();
+  constructor(private cap: number, private lambda: number) {}
+  private f(top: number, total: number) {
+    return top - this.lambda * (total - top);
   }
-  add(pool: string, d: number, v: number) {
-    const key = this.k(pool, d);
-    const a = this.m.get(key) ?? [];
-    a.push(v);
-    a.sort((x, y) => y - x);
-    if (a.length > this.cap) a.length = this.cap;
-    this.m.set(key, a);
+  private slot(k: number): SlotState {
+    let s = this.m.get(k);
+    if (!s) this.m.set(k, (s = { list: [], top: 0, total: 0 }));
+    return s;
+  }
+  /** Change in objective from adding value v to slot k. */
+  gain(k: number, v: number): number {
+    const s = this.m.get(k);
+    if (!s) return this.f(v, v);
+    const C = this.cap;
+    let top = s.top;
+    if (s.list.length < C) top += v;
+    else if (v > s.list[C - 1].v) top += v - s.list[C - 1].v;
+    return this.f(top, s.total + v) - this.f(s.top, s.total);
+  }
+  add(k: number, e: Entry) {
+    const s = this.slot(k);
+    let lo = 0;
+    while (lo < s.list.length && s.list[lo].v >= e.v) lo++;
+    s.list.splice(lo, 0, e);
+    s.total += e.v;
+    s.top = 0;
+    for (let j = 0; j < Math.min(this.cap, s.list.length); j++) s.top += s.list[j].v;
+  }
+  remove(k: number, i: number) {
+    const s = this.m.get(k);
+    if (!s) return;
+    const at = s.list.findIndex((x) => x.i === i);
+    if (at < 0) return;
+    s.total -= s.list[at].v;
+    s.list.splice(at, 1);
+    s.top = 0;
+    for (let j = 0; j < Math.min(this.cap, s.list.length); j++) s.top += s.list[j].v;
+  }
+  /** Σ objective over all slots. */
+  value(): number {
+    let t = 0;
+    for (const s of this.m.values()) t += this.f(s.top, s.total);
+    return t;
   }
 }
 
-interface PreparedCard {
+interface Prepared {
   row: CardRow;
-  pool: string;
-  /** [mmdd, payout] for in-window days, payout already × payoutScale. */
+  /** Slot keys (pool index × 1000 + mmdd) and payouts for in-window days. */
   hits: Array<[number, number]>;
+  price: number;
+  net: number;
 }
 
-function prepare(rows: CardRow[], p: EfficiencyParams): PreparedCard[] {
+function prepare(rows: CardRow[], p: EfficiencyParams): Prepared[] {
   const keys = new Set(windowKeys(p.window));
+  const poolIdx = new Map<string, number>();
   return rows.map((row) => {
     const scale = payoutScale(row.card, p);
+    const pool = poolOf(p, row.card.sport);
+    if (!poolIdx.has(pool)) poolIdx.set(pool, poolIdx.size + 1);
+    const base = poolIdx.get(pool)! * 10_000;
     const hits: Array<[number, number]> = [];
-    for (const [d, rax] of row.card.days) if (keys.has(d)) hits.push([d, rax * scale]);
-    return { row, pool: poolOf(p, row.card.sport), hits };
+    for (const [d, rax] of row.card.days) if (keys.has(d)) hits.push([base + d, rax * scale]);
+    return { row, hits, price: row.price, net: row.price * p.sunkFraction };
   });
 }
 
 export function buildPortfolio(cards: OtdCardRecord[], p: EfficiencyParams, o: PortfolioOptions): Portfolio {
-  const rows = rankCards(cards, p);
-  const prepared = prepare(rows, p);
-  const board = new SlotBoard(p.claimsPerDay);
+  const mode: OverlapMode = o.overlapMode ?? 'earnings';
+  const lambda = mode === 'min-overlap' ? o.overlapPenalty ?? 1 : 0;
+  const maxPrice = o.maxPricePerCard ?? Infinity;
+  const owned = o.ownedIds ?? new Set<string>();
+  const prepared = prepare(rankCards(cards, p), p);
+  const ownedIdx = prepared.map((x, i) => (owned.has(x.row.card.id) ? i : -1)).filter((i) => i >= 0);
+  for (const i of ownedIdx) (prepared[i].price = 0), (prepared[i].net = 0); // already held: free
+  let cand = prepared.map((_x, i) => i).filter((i) => !owned.has(prepared[i].row.card.id) && prepared[i].price <= maxPrice && prepared[i].hits.length > 0);
+
+  type Set_ = { board: SlotBoard; chosen: Set<number>; spent: number };
+  const fresh = (): Set_ => {
+    const board = new SlotBoard(p.claimsPerDay, lambda);
+    for (const i of ownedIdx) for (const [k, v] of prepared[i].hits) board.add(k, { i, v });
+    return { board, chosen: new Set<number>(), spent: 0 };
+  };
+  const gainOf = (st: Set_, i: number) => {
+    let g = 0;
+    for (const [k, v] of prepared[i].hits) g += st.board.gain(k, v);
+    return g;
+  };
+  const addTo = (st: Set_, i: number) => {
+    for (const [k, v] of prepared[i].hits) st.board.add(k, { i, v });
+    st.chosen.add(i);
+    st.spent += prepared[i].price;
+  };
+  const removeFrom = (st: Set_, i: number) => {
+    for (const [k] of prepared[i].hits) st.board.remove(k, i);
+    st.chosen.delete(i);
+    st.spent -= prepared[i].price;
+  };
+  const fits = (st: Set_, i: number) => st.spent + prepared[i].price <= o.budget && st.chosen.size < o.maxCards;
+  const passesRoi = (g: number, i: number) => {
+    const net = prepared[i].net;
+    return g > 1e-9 && (net > 0 ? g / net >= o.minMarginalRoi : true);
+  };
+
+  /** Greedy pass: `byRatio` picks max gain per cost, otherwise max absolute gain. */
+  const greedy = (byRatio: boolean, start?: Set_, noise?: () => number): Set_ => {
+    const st = start ?? fresh();
+    for (;;) {
+      let best = -1;
+      let bestScore = -Infinity;
+      for (const i of cand) {
+        if (st.chosen.has(i) || !fits(st, i)) continue;
+        const g = gainOf(st, i);
+        if (!passesRoi(g, i)) continue;
+        const net = prepared[i].net;
+        const raw = byRatio ? (net > 0 ? g / net : 1e12 + g) : g;
+        const score = noise ? raw * (0.55 + 0.9 * noise()) : raw; // randomised in iterated local search only
+        if (score > bestScore) (bestScore = score), (best = i);
+      }
+      if (best < 0) return st;
+      addTo(st, best);
+    }
+  };
+
+  /** Add / drop / swap hill-climbing on the objective, within budget and count. */
+  const refine = (st: Set_) => {
+    const EPS = 1e-6;
+    for (let iter = 0; iter < 60; iter++) {
+      const base = st.board.value();
+      let improved = false;
+      // 1) best single add
+      let bestAdd = -1;
+      let bestAddGain = EPS;
+      for (const i of cand) {
+        if (st.chosen.has(i) || !fits(st, i)) continue;
+        const g = gainOf(st, i);
+        if (passesRoi(g, i) && g > bestAddGain) (bestAddGain = g), (bestAdd = i);
+      }
+      if (bestAdd >= 0) { addTo(st, bestAdd); continue; }
+      // 2) drop a card that hurts the objective (min-overlap) or misses the ROI floor
+      for (const i of [...st.chosen]) {
+        removeFrom(st, i);
+        const loss = base - st.board.value();
+        const net = prepared[i].net;
+        if (loss < -EPS || (net > 0 && loss / net < o.minMarginalRoi && loss < base)) { improved = true; break; }
+        addTo(st, i);
+      }
+      if (improved) continue;
+      // 3) best swap (out i, in j)
+      let bestSwap: [number, number] | null = null;
+      let bestVal = base + EPS;
+      for (const i of [...st.chosen]) {
+        removeFrom(st, i);
+        const afterOut = st.board.value();
+        for (const j of cand) {
+          if (st.chosen.has(j) || j === i) continue;
+          if (st.spent + prepared[j].price > o.budget) continue;
+          const g = gainOf(st, j);
+          if (afterOut + g > bestVal) {
+            const net = prepared[j].net;
+            if (net > 0 && g / net < o.minMarginalRoi) continue;
+            bestVal = afterOut + g;
+            bestSwap = [i, j];
+          }
+        }
+        addTo(st, i);
+      }
+      if (bestSwap) { removeFrom(st, bestSwap[0]); addTo(st, bestSwap[1]); improved = true; }
+      if (!improved) return;
+    }
+  };
+
+  const doRefine = o.refine !== false;
+  const better = (a: Set_, b: Set_) => {
+    const va = a.board.value();
+    const vb = b.board.value();
+    return vb > va + 1e-6 || (Math.abs(vb - va) <= 1e-6 && b.spent < a.spent) ? b : a;
+  };
+  const runs = [greedy(true), greedy(false)];
+  const greedyObjective = Math.max(...runs.map((r) => r.board.value()));
+  let winner = runs[0];
+  if (doRefine) {
+    for (const r of runs) refine(r);
+    winner = better(runs[0], runs[1]);
+
+    // Iterated local search: knock out 1–3 chosen cards, re-fill greedily, re-refine, keep if better. Runs on a shortlist
+    // so it stays fast with thousands of candidates. Seeded, so results are reproducible.
+    const full = cand;
+    if (cand.length > 420) {
+      const byAbs = [...cand].sort((a, b) => prepared[b].hits.reduce((s, h) => s + h[1], 0) - prepared[a].hits.reduce((s, h) => s + h[1], 0));
+      const byGain = [...cand].map((i) => [i, winner.chosen.has(i) ? 0 : gainOf(winner, i) / Math.max(1, prepared[i].net)] as const).sort((a, b) => b[1] - a[1]);
+      cand = [...new Set([...byAbs.slice(0, 140), ...byGain.slice(0, 220).map((x) => x[0]), ...winner.chosen])];
+    }
+    let seed = 0x9e3779b9;
+    const rnd = () => ((seed = (Math.imul(seed ^ (seed >>> 15), 2246822507) + 0x6d2b79f5) >>> 0) / 2 ** 32);
+    const rebuild = (idx: number[]) => {
+      const st = fresh();
+      for (const i of idx) addTo(st, i);
+      return st;
+    };
+    const iters = Math.min(80, 20 + winner.chosen.size * 4);
+    for (let t = 0; t < iters && winner.chosen.size > 0; t++) {
+      const pool = [...winner.chosen];
+      const k = Math.min(pool.length, 1 + Math.floor(rnd() * 3));
+      for (let j = 0; j < k; j++) pool.splice(Math.floor(rnd() * pool.length), 1);
+      const st = greedy(rnd() < 0.5, rebuild(pool), rnd);
+      refine(st);
+      winner = better(winner, st);
+    }
+    cand = full;
+  }
+  const objective = winner.board.value();
+
+  // Replay the chosen set in a sensible order (owned first, then by marginal ÷ cost) for the table.
+  const order: number[] = [...ownedIdx];
+  const replay = new SlotBoard(p.claimsPerDay, lambda);
+  const margin = new Map<number, number>();
+  const put = (i: number) => {
+    let g = 0;
+    for (const [k, v] of prepared[i].hits) g += replay.gain(k, v);
+    margin.set(i, g);
+    for (const [k, v] of prepared[i].hits) replay.add(k, { i, v });
+  };
+  ownedIdx.forEach(put);
+  const left = new Set(winner.chosen);
+  while (left.size) {
+    let best = -1;
+    let bs = -Infinity;
+    for (const i of left) {
+      let g = 0;
+      for (const [k, v] of prepared[i].hits) g += replay.gain(k, v);
+      const net = prepared[i].net;
+      const sc = net > 0 ? g / net : 1e12 + g;
+      if (sc > bs) (bs = sc), (best = i);
+    }
+    left.delete(best);
+    order.push(best);
+    put(best);
+  }
+
   const picks: PortfolioPick[] = [];
-  const chosen = new Set<string>();
   let cumEarn = 0;
   let cumPrice = 0;
   let cumNet = 0;
-  let spent = 0;
-  const owned = o.ownedIds ?? new Set<string>();
-  let ownedCount = 0;
-
-  const commit = (pc: PreparedCard, marginal: number, price: number) => {
-    for (const [d, v] of pc.hits) board.add(pc.pool, d, v);
-    chosen.add(pc.row.card.id);
-    const netCost = price * p.sunkFraction;
-    cumEarn += marginal;
-    cumPrice += price;
-    cumNet += netCost;
-    picks.push({ row: pc.row, marginal, netCost, marginalRoi: netCost > 0 ? marginal / netCost : marginal > 0 ? Infinity : 0, cumEarn, cumPrice, cumNetCost: cumNet });
-  };
-
-  for (const pc of prepared) {
-    if (owned.has(pc.row.card.id)) {
-      let g = 0;
-      for (const [d, v] of pc.hits) g += board.gain(pc.pool, d, v);
-      commit(pc, g, 0);
-      ownedCount++;
-    }
+  for (const i of order) {
+    const pr = prepared[i];
+    const m = margin.get(i) ?? 0;
+    cumEarn += m;
+    cumPrice += pr.price;
+    cumNet += pr.net;
+    picks.push({ row: pr.row, marginal: m, netCost: pr.net, marginalRoi: pr.net > 0 ? m / pr.net : m > 0 ? Infinity : 0, cumEarn, cumPrice, cumNetCost: cumNet });
   }
 
+  // Why did it stop?
   let stoppedBecause: Portfolio['stoppedBecause'] = 'candidates';
-  const maxPrice = o.maxPricePerCard ?? Infinity;
-  while (picks.length - ownedCount < o.maxCards) {
-    let best: { pc: PreparedCard; gain: number; score: number } | null = null;
+  if (cand.length) {
+    let anyGain = false;
     let anyAffordable = false;
-    for (const pc of prepared) {
-      if (chosen.has(pc.row.card.id)) continue;
-      const price = pc.row.price;
-      if (price > maxPrice || spent + price > o.budget) continue;
-      anyAffordable = true;
-      let g = 0;
-      for (const [d, v] of pc.hits) g += board.gain(pc.pool, d, v);
-      if (g <= 0) continue;
-      const net = price * p.sunkFraction;
-      const score = net > 0 ? g / net : 1e12 + g; // free cards first, biggest gain first
-      if (!best || score > best.score) best = { pc, gain: g, score };
+    for (const i of cand) {
+      if (winner.chosen.has(i)) continue;
+      if (gainOf(winner, i) <= 1e-9) continue;
+      anyGain = true;
+      if (winner.spent + prepared[i].price <= o.budget) anyAffordable = true;
     }
-    if (!best) {
-      stoppedBecause = anyAffordable ? 'no-gain' : 'budget';
-      break;
-    }
-    if (best.score < o.minMarginalRoi) {
-      stoppedBecause = 'no-gain';
-      break;
-    }
-    commit(best.pc, best.gain, best.pc.row.price);
-    spent += best.pc.row.price;
-    if (picks.length - ownedCount >= o.maxCards) stoppedBecause = 'count';
+    stoppedBecause = winner.chosen.size >= o.maxCards && anyGain ? 'count' : anyGain && !anyAffordable ? 'budget' : anyGain ? 'count' : 'no-gain';
   }
 
   const calendar = buildCalendar(picks.map((x) => x.row.card), p);
@@ -288,6 +493,9 @@ export function buildPortfolio(cards: OtdCardRecord[], p: EfficiencyParams, o: P
     wasted: calendar.reduce((s, c) => s + c.wasted, 0),
     emptySlots: calendar.reduce((s, c) => s + c.emptySlots, 0),
     stoppedBecause,
+    objective,
+    greedyObjective,
+    mode,
   };
 }
 

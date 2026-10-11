@@ -36,7 +36,7 @@ export default function EfficiencyTab() {
 
   const ownedSet = useMemo(() => new Set(Object.keys(s.ownedLevels)), [s.ownedLevels]);
   const rows = useMemo(() => rankCards(cards, params), [cards, params]);
-  const options = useMemo<PortfolioOptions>(() => ({ budget: s.budget, maxCards: s.maxCards, minMarginalRoi: 0, ownedIds: ownedSet }), [s.budget, s.maxCards, ownedSet]);
+  const options = useMemo<PortfolioOptions>(() => ({ budget: s.budget, maxCards: s.maxCards, minMarginalRoi: s.minRoi, ownedIds: ownedSet, overlapMode: s.overlapMode }), [s.budget, s.maxCards, s.minRoi, s.overlapMode, ownedSet]);
 
   const onOverride = useCallback((id: string, price: number | null) => setS((x) => {
     const rung = levels.get(id)?.key;

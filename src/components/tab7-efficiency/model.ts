@@ -27,6 +27,10 @@ export interface EffState {
   hold: 'keep' | 'flip';
   /** Share of the price lost on a flip (fee + drift), 0–1. */
   flipLoss: number;
+  /** Best-combination priority: maximise earnings, or penalise overlap (payout your claim slots can't take). */
+  overlapMode: 'earnings' | 'min-overlap';
+  /** Don't add a card earning less than this share of its net cost over the window (0–1). */
+  minRoi: number;
   /** Rax per rating point (Rateboard's "rate"). */
   rate: number;
   /** Per-card, per-rung price you saw in-app: id → rung → Rax. */
@@ -49,6 +53,8 @@ export const DEFAULT_STATE: EffState = {
   sports: [],
   budget: 100_000,
   maxCards: 12,
+  overlapMode: 'earnings',
+  minRoi: 0,
   hold: 'keep',
   flipLoss: 0.1,
   rate: DEFAULT_PRICE_PARAMS.ratePerRating.mid.value,

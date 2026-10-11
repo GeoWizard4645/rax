@@ -6,6 +6,7 @@ import { OTD_SPORTS, type OtdCardRecord, type OtdSport } from '../../../shared/o
 import { rax } from '../../lib/format';
 import { Loading } from '../ui/StateBlock';
 import { buildLevels, effParams } from '../tab7-efficiency/model';
+import MultiYearPanel from './MultiYearPanel';
 import { useEffState } from '../tab7-efficiency/useEffState';
 import { useOtdSnapshot } from '../tab7-efficiency/useOtdSnapshot';
 
@@ -25,7 +26,9 @@ export default function CalendarTab() {
   const snap = useOtdSnapshot(s.method);
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year] = useState(now.getFullYear());
+  const firstYear = now.getFullYear();
+  const [year, setYear] = useState(firstYear);
+  const lastYear = firstYear + 11; // OTD runs forever; the view spans 12 years from this one
   const [claims, setClaims] = useState<2 | 3>(2);
   const [source, setSource] = useState<Source>('mine');
   const [sportsSel, setSportsSel] = useState<OtdSport[]>([]);
@@ -46,7 +49,7 @@ export default function CalendarTab() {
   const best = useMemo(() => {
     if (source !== 'best' || !all) return [];
     const p = { ...effParams(s, levels, sportsOn), claimsPerDay: claims };
-    return buildPortfolio(all, p, { budget: s.budget, maxCards: s.maxCards, minMarginalRoi: 0, ownedIds: new Set(Object.keys(s.ownedLevels)) }).picks.map((x) => x.row.card);
+    return buildPortfolio(all, p, { budget: s.budget, maxCards: s.maxCards, minMarginalRoi: s.minRoi, ownedIds: new Set(Object.keys(s.ownedLevels)), overlapMode: s.overlapMode }).picks.map((x) => x.row.card);
   }, [source, all, s, levels, sportsOn, claims]);
   const shown = source === 'mine' ? ownedCards : best;
 
@@ -88,7 +91,17 @@ export default function CalendarTab() {
 
   const add = (c: OtdCardRecord) => set({ ownedLevels: { ...s.ownedLevels, [c.id]: levels.get(c.id)?.key ?? 'Iconic' } });
   const remove = (id: string) => { const o = { ...s.ownedLevels }; delete o[id]; set({ ownedLevels: o }); };
-  const nav = (d: number) => setMonth((m) => ((m - 1 + d + 12) % 12) + 1);
+  const nav = (d: number) => {
+    let m = month + d;
+    let y = year;
+    if (m < 1) (m = 12), y--;
+    if (m > 12) (m = 1), y++;
+    if (y < firstYear || y > lastYear) return;
+    setMonth(m);
+    setYear(y);
+  };
+  const atStart = year === firstYear && month === 1;
+  const atEnd = year === lastYear && month === 12;
   const sportSet = [...new Set([...selCells.map((c) => c.pool), ...suggestions.keys()])] as OtdSport[];
 
   return (
@@ -96,7 +109,7 @@ export default function CalendarTab() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-semibold">OTD Calendar</h1>
-          <p className="text-sm text-muted">What your cards pay on each day of the year, with the daily claim limit applied per sport. Anniversaries repeat every year.</p>
+          <p className="text-sm text-muted">What your cards pay on each day, with the daily claim limit applied per sport. Anniversaries repeat every year, so you can browse up to 12 years ahead and project the total.</p>
         </div>
         <span className="chip-blue" title="Real's per-game Rax, snapshotted from Rateboard's logs — see Tab 7 for the method">SNAPSHOT · {snap.data ? snap.data.generatedAt.slice(0, 10) : '…'}</span>
       </div>
@@ -114,6 +127,10 @@ export default function CalendarTab() {
             <div className="seg" role="group" aria-label="Claims per day">
               <button aria-pressed={claims === 2} onClick={() => setClaims(2)}>2 claims</button>
               <button aria-pressed={claims === 3} onClick={() => setClaims(3)} title="Pro's extra claim is only granted if you win its poll — this shows the best case">3 claims (Pro, best case)</button>
+            </div>
+            <div className="seg" role="group" aria-label="Overlap priority" title="How the Best-combination preview chooses cards">
+              <button aria-pressed={s.overlapMode === 'earnings'} onClick={() => set({ overlapMode: 'earnings' })}>Max earnings</button>
+              <button aria-pressed={s.overlapMode === 'min-overlap'} onClick={() => set({ overlapMode: 'min-overlap' })}>Minimize overlap</button>
             </div>
             <button className={showOverlaps ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'} onClick={() => setShowOverlaps(!showOverlaps)}><AlertTriangle size={12} /> Overlaps {overlapDays.length}</button>
             <div className="flex flex-wrap gap-1" role="group" aria-label="Sports">
@@ -133,12 +150,16 @@ export default function CalendarTab() {
             <div className="space-y-4">
               <div className="panel">
                 <div className="flex items-center justify-between px-3 py-2">
-                  <button className="btn-ghost btn-sm" onClick={() => nav(-1)} aria-label="Previous month"><ChevronLeft size={14} /></button>
+                  <button className="btn-ghost btn-sm" disabled={atStart} onClick={() => nav(-1)} aria-label="Previous month"><ChevronLeft size={14} /></button>
                   <div className="text-center">
-                    <div className="text-sm font-semibold">{MONTHS[month - 1]} {year}</div>
+                    <div className="flex items-center justify-center gap-1 text-sm font-semibold">{MONTHS[month - 1]}
+                      <select className="field !w-auto !py-0 !px-1 text-sm font-semibold" value={year} onChange={(e) => setYear(+e.target.value)} aria-label="Year">
+                        {Array.from({ length: 12 }, (_, i) => firstYear + i).map((y) => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                    </div>
                     <div className="num text-xs text-emerald">{rax(monthTotal)} Rax</div>
                   </div>
-                  <button className="btn-ghost btn-sm" onClick={() => nav(1)} aria-label="Next month"><ChevronRight size={14} /></button>
+                  <button className="btn-ghost btn-sm" disabled={atEnd} onClick={() => nav(1)} aria-label="Next month"><ChevronRight size={14} /></button>
                 </div>
                 <div className="grid grid-cols-7 gap-1 px-2 pb-2">
                   {DOW.map((d) => <div key={d} className="py-1 text-center text-[10px] font-semibold tracking-wider text-muted">{d}</div>)}
@@ -171,6 +192,8 @@ export default function CalendarTab() {
                   )}
                 </div>
               )}
+
+              <MultiYearPanel cards={shown} params={params} levels={levels} firstYear={firstYear} />
 
               <div className="panel">
                 <div className="panel-hd"><h2>{MONTHS[selMonth - 1]} {selDay}</h2><span className="num text-xs text-emerald">{rax(dayTotal(sel))} Rax claimed</span></div>

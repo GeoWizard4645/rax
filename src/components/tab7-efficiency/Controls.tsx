@@ -69,6 +69,9 @@ export default function Controls({ s, set, available }: { s: EffState; set: (p: 
           <label className="flex items-center justify-between gap-2 text-xs text-muted" title="Price of one rating point of play cards. Default = Rateboard's median standing offer.">Rax per rating
             <input className="field num !w-28" type="number" min={1} step="0.5" value={s.rate} onChange={(e) => set({ rate: num(e.target.value, 1) })} />
           </label>
+          <label className="flex items-center justify-between gap-2 text-xs text-muted" title="The combination picker won't add a card that earns less than this share of its cost inside the timeframe.">Min. return per card %
+            <input className="field num !w-20" type="number" min={0} value={Math.round(s.minRoi * 100)} onChange={(e) => set({ minRoi: num(e.target.value) / 100 })} />
+          </label>
           <p className="hint">Default {DEFAULT_PRICE_PARAMS.ratePerRating.mid.value} = Rateboard's median offer (8 floor, ~30 for stars). Overwrite any card's price in the table.</p>
         </div>
 
@@ -87,6 +90,12 @@ export default function Controls({ s, set, available }: { s: EffState; set: (p: 
             <input className="field num !w-20" type="number" min={0} max={100} value={Math.round(s.proWin * 100)} onChange={(e) => set({ proWin: Math.min(100, num(e.target.value)) / 100 })} />
           </label>
           <p className="hint">2 guaranteed claims per sport per day (documented). Pro's extra claim is a poll-win bet — 0% to ignore it.</p>
+          <span className="label pt-1">Best-combination priority</span>
+          <div className="seg" role="group" aria-label="Overlap priority">
+            <button aria-pressed={s.overlapMode === 'earnings'} onClick={() => set({ overlapMode: 'earnings' })} title="Maximise total claimable payout. Overlap only matters through the claims it costs you.">Max earnings</button>
+            <button aria-pressed={s.overlapMode === 'min-overlap'} onClick={() => set({ overlapMode: 'min-overlap' })} title="Payout your claim slots can't take counts against the set, so it spreads cards across different days.">Minimize overlap</button>
+          </div>
+          <p className="hint">{s.overlapMode === 'earnings' ? 'Picks the set that claims the most Rax, even if some cards share days.' : 'Counts payout that overlaps (and so can\'t be claimed) as a loss — spreads your cards over different days, trading a little total for far less waste.'}</p>
         </div>
 
         <div className="md:col-span-2 xl:col-span-4">
