@@ -30,10 +30,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
+      # Only esbuild is needed (the script imports nothing but shared/*.ts); `npm ci` would add ~3 min to every restart.
       - name: Build the snapshot script
-        run: npx esbuild scripts/kalshi-snapshot.ts --bundle --platform=node --format=esm --outfile="$RUNNER_TEMP/ks.mjs"
+        run: npx --yes esbuild@0.28.1 scripts/kalshi-snapshot.ts --bundle --platform=node --format=esm --outfile="$RUNNER_TEMP/ks.mjs"
       - name: Snapshot loop
         env:
           GH_TOKEN: ${{ github.token }}
