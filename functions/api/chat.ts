@@ -7,7 +7,7 @@
  * its offline helper.
  */
 import { MAX_CONTEXT_CHARS } from '../../shared/agent/prompt';
-import type { AgentContext, ChatRequest, ChatResponse } from '../../shared/agent/types';
+import type { AgentActionSpec, AgentContext, AgentParamSpec, ChatRequest, ChatResponse } from '../../shared/agent/types';
 import { makeToolCtx, type AgentEnv } from '../_lib/agentCtx';
 import { remaining, type BudgetEnv } from '../_lib/budget';
 import { runChat } from '../_lib/chatCore';
@@ -21,13 +21,23 @@ const MAX_BODY = 80 * 1024;
 
 const reply = (body: ChatResponse, status = 200, extra: Record<string, string> = {}) => json(body, status, { 'Cache-Control': 'no-store', ...extra });
 
+const str = (x: unknown, n: number) => String(x ?? '').slice(0, n);
+/** The page tells us what it can change; keep each field bounded so a hand-crafted request can't inflate the prompt. */
+const cleanParam = (p: AgentParamSpec): AgentParamSpec => ({
+  name: str(p?.name, 40), type: ['number', 'integer', 'boolean', 'string', 'enum', 'string[]', 'date'].includes(p?.type) ? p.type : 'string', description: str(p?.description, 220),
+  ...(Array.isArray(p?.values) ? { values: p.values.slice(0, 40).map((v) => str(v, 30)) } : {}),
+  ...(Number.isFinite(p?.min) ? { min: p.min } : {}), ...(Number.isFinite(p?.max) ? { max: p.max } : {}),
+  value: typeof p?.value === 'object' ? str(JSON.stringify(p.value), 200) : typeof p?.value === 'string' ? str(p.value, 200) : p?.value,
+});
+const cleanAction = (a: AgentActionSpec): AgentActionSpec => ({ name: str(a?.name, 40), description: str(a?.description, 200), ...(Array.isArray(a?.args) ? { args: a.args.slice(0, 5).map((x) => ({ name: str(x?.name, 30), type: x?.type === 'number' ? 'number' as const : 'string' as const, description: str(x?.description, 100), required: !!x?.required })) } : {}) });
+
 function cleanContext(raw: unknown): AgentContext {
   const c = (raw && typeof raw === 'object' ? raw : {}) as Partial<AgentContext>;
   const tabs = Array.isArray(c.tabs) ? c.tabs.slice(0, 12) : [];
   const ctx: AgentContext = {
     route: typeof c.route === 'string' ? c.route.slice(0, 80) : '/',
     now: typeof c.now === 'string' ? c.now.slice(0, 40) : new Date().toISOString(),
-    tabs: tabs.filter((t) => t && typeof t.id === 'string' && typeof t.label === 'string').map((t) => ({ ...t, id: t.id.slice(0, 30), label: t.label.slice(0, 40), route: String(t.route ?? '').slice(0, 40), active: !!t.active, seen: !!t.seen, params: Array.isArray(t.params) ? t.params.slice(0, 40) : undefined, actions: Array.isArray(t.actions) ? t.actions.slice(0, 12) : undefined })),
+    tabs: tabs.filter((t) => t && typeof t.id === 'string' && typeof t.label === 'string').map((t) => ({ ...t, id: t.id.slice(0, 30), label: t.label.slice(0, 40), route: String(t.route ?? '').slice(0, 40), active: !!t.active, seen: !!t.seen, params: Array.isArray(t.params) ? t.params.slice(0, 40).map(cleanParam) : undefined, actions: Array.isArray(t.actions) ? t.actions.slice(0, 12).map(cleanAction) : undefined })),
     activity: Array.isArray(c.activity) ? c.activity.slice(-20).map((a) => String(a).slice(0, 160)) : [],
   };
   // hard ceiling on what the page can make us pay to read
