@@ -30,7 +30,8 @@ const TTL = 45;
  * ~10–15 min old and is reported as such in `sources[]`. Single-sport requests only (ALL would need many more subrequests).
  */
 const SNAPSHOT_URL = (sport: string) => `https://raw.githubusercontent.com/GeoWizard4645/rax/odds-data/kalshi/${sport}.json`;
-const SNAPSHOT_MAX_AGE_MS = 45 * 60_000;
+const SNAPSHOT_MAX_AGE_MS = 3 * 3600_000; // GitHub's cron is best-effort (can run late); older than this the data is dropped
+const SNAPSHOT_STALE_MIN = 45; // beyond this the status note says STALE
 
 interface KalshiSnapshot {
   generatedAt: string;
@@ -152,7 +153,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, waitUntil }) => {
       if (snap) {
         kalshi.push(...snap.payloads);
         const st = status.get('kalshi')!;
-        kalshiNote = `live Kalshi is rate-limiting our servers (${st.err ?? 'HTTP 429'}); using a ${snap.ageMin}-minute-old snapshot`;
+        kalshiNote = `live Kalshi is rate-limiting our servers (${st.err ?? 'HTTP 429'}); using a ${snap.ageMin}-minute-old snapshot${snap.ageMin > SNAPSHOT_STALE_MIN ? ' — STALE, Kalshi prices may have moved a lot' : ''}`;
         st.ok = snap.payloads.length;
         st.fail = 0;
         st.err = undefined;

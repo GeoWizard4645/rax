@@ -173,8 +173,15 @@ describe('Kalshi snapshot fallback (Kalshi 429s Cloudflare IPs)', () => {
     expect(calls.filter((c) => c.url.includes('raw.githubusercontent.com'))).toHaveLength(1);
   });
 
-  it('ignores a stale snapshot and reports Kalshi as failed', async () => {
-    stub({ ...kalshiBlocked, 'raw.githubusercontent.com': ok(snapshot(120)) });
+  it('flags a 90-minute-old snapshot as STALE but still uses it', async () => {
+    stub({ ...kalshiBlocked, 'raw.githubusercontent.com': ok(snapshot(90)) });
+    const k = ((await J(await run())) as OddsResponse).sources.find((s) => s.source === 'kalshi')!;
+    expect(k.ok).toBe(true);
+    expect(k.error).toMatch(/90-minute-old snapshot — STALE/);
+  });
+
+  it('drops a snapshot older than 3 hours and reports Kalshi as failed', async () => {
+    stub({ ...kalshiBlocked, 'raw.githubusercontent.com': ok(snapshot(240)) });
     const k = ((await J(await run())) as OddsResponse).sources.find((s) => s.source === 'kalshi')!;
     expect(k.ok).toBe(false);
     expect(k.error).toMatch(/429/);
