@@ -95,7 +95,7 @@ export interface ChatDeps {
 const STATUS: Record<string, string> = {
   search_docs: 'Searching the docs…', otd_payout: 'Calculating the OTD payout…', otd_top_cards: 'Ranking OTD cards…', otd_rules: 'Looking up the card rules…',
   ev_calc: 'Computing EV…', odds_convert: 'Converting odds…', devig: 'Removing the vig…', live_odds: 'Fetching live odds…', schedule: 'Fetching the schedule…',
-  rateboard_owed: 'Pricing the card…', calculate: 'Calculating…',
+  rateboard_owed: 'Pricing the card…', calculate: 'Calculating…', request_feature: 'Drafting the email…',
 };
 
 const GREETING = /^\s*(hi|hello|hey|yo|thanks|thank you|ok|okay|cool|nice|help)\b[\s!.?]*$/i;

@@ -7,7 +7,7 @@
 import { handleMcp, INSTRUCTIONS, MCP_VERSIONS, parseError, SERVER_INFO } from './_lib/mcp';
 import { makeToolCtx, type AgentEnv } from './_lib/agentCtx';
 import { rateLimit } from './_lib/ratelimit';
-import { TOOLS } from '../shared/agent/tools';
+import { MCP_TOOLS as TOOLS } from '../shared/agent/tools';
 
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',

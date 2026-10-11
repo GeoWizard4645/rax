@@ -67,6 +67,8 @@ export interface ToolSpec {
   inputSchema: JsonSchema;
   /** Offered to the in-app model too? Heavy/rarely useful tools are MCP-only to keep the chat prompt small. */
   chat: boolean;
+  /** `false` keeps a tool out of the public MCP server (chat-only helpers such as the feature-request email). */
+  mcp?: false;
   /** Terser description for the in-app model (every prompt token costs free-tier neurons); MCP clients get `description`. */
   chatDescription?: string;
   handler: (args: Record<string, unknown>, ctx: ToolCtx) => Promise<unknown>;
@@ -111,6 +113,33 @@ const r = (x: number, d = 2) => (Number.isFinite(x) ? Math.round(x * 10 ** d) / 
 const prob = (x: number) => (x > 1 ? x / 100 : x);
 
 /* --------------------------------- tools -------------------------------- */
+
+export const FEATURE_EMAIL = 'rax@vivaanshahani.com';
+
+/** encodeURIComponent leaves ( ) ! ' * alone; they would end a markdown link early, so encode them too. */
+const enc = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
+export function draftFeatureEmail(title: string, details: string, tab?: string) {
+  const clean = (x: string) => x.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const subject = `RAX feature request: ${clean(title)}`;
+  const body = [
+    'Hi,',
+    '',
+    "I was using the RAX site (rax.vivaanshahani.com) and asked its assistant for something it can't do yet:",
+    '',
+    clean(details),
+    ...(tab ? ['', `Related tab: ${clean(tab)}`] : []),
+    '',
+    'Could you add this? Thanks!',
+  ].join('\n');
+  return {
+    email: FEATURE_EMAIL,
+    subject,
+    body,
+    mailto: `mailto:${FEATURE_EMAIL}?subject=${enc(subject)}&body=${enc(body)}`,
+    instruction: 'Tell the user in one line that the site cannot do this yet. Show the draft (subject + body) as a block quote, then give the link as [Email the developer](<mailto>) copied exactly. Do not promise it will be built.',
+  };
+}
 
 const SOURCES = ['real-docs', 'rax-docs', 'site-guide'] as const;
 const RUNG_NAMES = [...RARITY_LADDER.filter((l) => l.key !== 'General').map((l) => l.key), ...ICONIC_LEVELS.map((l) => l.key)];
@@ -500,7 +529,30 @@ export const TOOLS: ToolSpec[] = [
       }
     },
   },
+  {
+    name: 'request_feature',
+    title: 'Ask the developer for a feature',
+    description: "Build a pre-written email to the site's developer asking for a feature, calculation or data source this site can't do. Returns a mailto link and the draft.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short name of the request, e.g. "Parlay EV calculator".' },
+        details: { type: 'string', description: 'What the user wants, in their words plus any numbers/examples they gave, written so the developer can act on it without a follow-up.' },
+        tab: { type: 'string', description: 'Which tab it relates to, if any.' },
+      },
+      required: ['title', 'details'],
+      additionalProperties: false,
+    },
+    chatDescription: "ONLY when the user asks for a feature, calculation, tab or data this site truly can't do (after checking your other tools): returns the mailto link + draft email to the developer.",
+    chat: true,
+    mcp: false,
+    async handler(a) {
+      return draftFeatureEmail(strArg(a, 'title', { required: true, max: 90 })!, strArg(a, 'details', { required: true, max: 900 })!, strArg(a, 'tab', { max: 40 }));
+    },
+  },
 ];
+
+export const MCP_TOOLS = TOOLS.filter((t) => t.mcp !== false);
 
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 export const getTool = (name: string): ToolSpec | undefined => BY_NAME.get(name);

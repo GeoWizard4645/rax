@@ -4,11 +4,13 @@ import { Link } from 'react-router-dom';
 /**
  * A small, safe Markdown renderer for assistant replies: paragraphs, headings, bullet/numbered lists, tables, block quotes,
  * fenced code, and inline **bold**, *italic*, `code` and [links](…). It builds React elements (never HTML strings), and only
- * https:// or same-site links are clickable, so model output can't inject markup or javascript: URLs.
+ * https:// or same-site links (and the developer's own mailto: draft) are clickable, so model output can't inject markup or javascript: URLs.
  */
 
 function link(href: string, label: ReactNode, key: number): ReactNode {
   if (/^\/[a-z0-9/_-]*(\?[^\s]*)?$/i.test(href)) return <Link key={key} to={href}>{label}</Link>;
+  // only the developer's address (the feature-request draft), never an arbitrary mailto: from model output
+  if (/^mailto:rax@vivaanshahani\.com(\?[A-Za-z0-9%=&._~+-]*)?$/i.test(href)) return <a key={key} href={href}>{label}</a>;
   if (/^https:\/\/[^\s]+$/i.test(href)) return <a key={key} href={href} target="_blank" rel="noopener noreferrer">{label}</a>;
   return <Fragment key={key}>{label}</Fragment>;
 }

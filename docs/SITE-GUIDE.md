@@ -103,6 +103,7 @@ Assistant-settable: `sport` (`NBA NHL MLB WNBA NFL CFB CBB FC UFC`), `bankroll` 
 - **Do calculations** with the site's own code: OTD payouts, rarity ladder, EV/Kelly, odds conversions, de-vig, Rateboard owed Rax, plain arithmetic.
 - **Fetch live data** the same way the site does: upcoming games and odds, schedules.
 - It knows what you've typed or changed on every tab this session (it's shown in the "What I can see" panel in the chat), plus what is saved in your browser for Tabs 7–9.
+- If you ask it for a feature, calculation or data source the site can't do yet, it drafts an email to the developer (rax@vivaanshahani.com) with a ready-to-send link — it can't promise the feature will be built.
 - It runs on Cloudflare Workers AI's free tier (a daily allowance shared by all visitors). When that's used up it can switch to other free AI providers; if you paste your own free Groq or Gemini key (key icon in the chat header) it uses yours with no limit from this site. If nothing is available it falls back to an offline helper (docs search + navigation + parameter changes) until the allowance resets at 00:00 UTC.
 
 ## MCP server (`/mcp`)

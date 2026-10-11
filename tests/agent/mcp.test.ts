@@ -69,6 +69,7 @@ describe('/mcp methods', () => {
   it('tools/list is complete and read-only annotated', async () => {
     const { tools } = (await rpc('tools/list')).json.result;
     expect(tools.map((t: any) => t.name)).toEqual(expect.arrayContaining(['search_docs', 'otd_payout', 'ev_calc', 'live_odds', 'calculate']));
+    expect(tools.map((t: any) => t.name)).not.toContain('request_feature');
     for (const t of tools) {
       expect(t.inputSchema.type).toBe('object');
       expect(t.annotations.readOnlyHint).toBe(true);

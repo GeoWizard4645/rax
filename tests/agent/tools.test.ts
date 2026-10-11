@@ -17,6 +17,28 @@ describe('calculate', () => {
   it.each(['1/0', '2+', 'foo(1)', 'x', 'import("fs")', '1 2', '(1', 'a'.repeat(500)])('rejects %s', (e) => expect(() => evaluate(e)).toThrow());
 });
 
+describe('request_feature', () => {
+  it('drafts an email to the developer with a safe, fully-encoded mailto link', async () => {
+    const r = await call('request_feature', { title: 'Parlay (EV) calculator!', details: 'Please add a 3-leg parlay EV calculator.\nLegs: 55%, 60% & 52% — "fair" probs.', tab: 'edge' });
+    expect(r.email).toBe('rax@vivaanshahani.com');
+    expect(r.subject).toBe('RAX feature request: Parlay (EV) calculator!');
+    expect(r.body).toContain('3-leg parlay EV calculator. Legs: 55%, 60% & 52%');
+    expect(r.body).toContain('Related tab: edge');
+    expect(r.mailto).toMatch(/^mailto:rax@vivaanshahani\.com\?subject=[A-Za-z0-9%._~-]+&body=[A-Za-z0-9%._~-]+$/); // no raw ( ) ! ' * space or newline
+    const u = new URL(r.mailto);
+    expect(u.searchParams.get('subject')).toBe(r.subject);
+    expect(u.searchParams.get('body')).toBe(r.body);
+  });
+  it('requires a title and details, caps their length, and stays out of the public MCP server', async () => {
+    expect(await runTool('request_feature', { title: 'x' }, toolCtx())).toMatchObject({ ok: false });
+    const long = await call('request_feature', { title: 't'.repeat(500), details: 'd'.repeat(5000) });
+    expect(long.mailto.length).toBeLessThan(3500);
+    const { MCP_TOOLS } = await import('../../shared/agent/tools');
+    expect(MCP_TOOLS.some((t) => t.name === 'request_feature')).toBe(false);
+    expect(TOOLS.find((t) => t.name === 'request_feature')!.chat).toBe(true);
+  });
+});
+
 describe('tool registry', () => {
   it('has unique names and valid object schemas', () => {
     expect(new Set(TOOLS.map((t) => t.name)).size).toBe(TOOLS.length);

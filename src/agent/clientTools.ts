@@ -67,6 +67,7 @@ export function describeStep(name: string, rawArgs: unknown, result: unknown): {
     case 'calculate': return { label: `Calculated ${String(a.expression ?? '').slice(0, 40)}`, ok: !failed };
     case 'live_odds': return { label: `Fetched ${String(a.sport ?? '')} odds`, ok: !failed };
     case 'schedule': return { label: 'Fetched the schedule', ok: !failed };
+    case 'request_feature': return { label: 'Drafted an email to the developer', ok: !failed };
     case 'ev_calc': return { label: 'Computed EV', ok: !failed };
     case 'otd_payout': case 'otd_top_cards': case 'otd_rules': return { label: 'Used the OTD rules', ok: !failed };
     default: return { label: name.replace(/_/g, ' '), ok: !failed };

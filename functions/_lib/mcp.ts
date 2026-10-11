@@ -10,7 +10,7 @@
  * and a few prompt templates.
  */
 import { SITE_TABS } from '../../shared/agent/siteMap';
-import { runTool, TOOLS, type ToolCtx } from '../../shared/agent/tools';
+import { MCP_TOOLS as TOOLS, runTool, type ToolCtx } from '../../shared/agent/tools';
 
 export const MCP_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
 const LATEST = MCP_VERSIONS[0];
