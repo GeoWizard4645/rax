@@ -5,6 +5,7 @@ import { mergeRaxEdgeOdds, parseRealProbs, type RealParse } from '../../../share
 import { useNow, useOdds } from '../../hooks/useOdds';
 import { slug } from '../../lib/format';
 import { useRaxEdge } from '../../lib/raxedgeStore';
+import { useEdgeSurface } from '../../agent/surfaces/useEdgeSurface';
 import { Segmented } from '../ui/Segmented';
 import BestBoard from './BestBoard';
 import GamesView, { openId } from './GamesView';
@@ -93,6 +94,7 @@ export default function EdgeTab() {
   }, [view, openKey, bySport]);
 
   const nEntries = Object.keys(s.entries).length;
+  useEdgeSurface({ s, set, view, setView, board: board.rows, odds: bySport[s.sport]?.data, nEntries, onSport: () => setOpenKey(null), reload: () => reload(s.sport) });
 
   return (
     <div className="space-y-4">

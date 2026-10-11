@@ -18,6 +18,8 @@ export interface ModelResult {
   toolCalls: ToolCall[];
   promptTokens: number;
   completionTokens: number;
+  /** Neurons Workers AI says this call cost (usage.neurons), when reported — exact, unlike our per-model estimate. */
+  neurons?: number;
 }
 
 export class ModelError extends Error {
@@ -56,10 +58,12 @@ export function normalise(raw: unknown): ModelResult {
   const contentRaw = msg.content ?? o.response ?? o.result ?? '';
   const content = typeof contentRaw === 'string' ? contentRaw : Array.isArray(contentRaw) ? contentRaw.map((p) => asObj(p).text ?? '').join('') : '';
   const rawCalls = (Array.isArray(msg.tool_calls) ? msg.tool_calls : Array.isArray(o.tool_calls) ? o.tool_calls : []) as unknown[];
-  return { content: stripThinking(content), toolCalls: rawCalls.map(toToolCall).filter((c): c is ToolCall => !!c), promptTokens, completionTokens };
+  const neurons = Number(usage.neurons);
+  return { content: stripThinking(content), toolCalls: rawCalls.map(toToolCall).filter((c): c is ToolCall => !!c), promptTokens, completionTokens, ...(Number.isFinite(neurons) && neurons > 0 ? { neurons } : {}) };
 }
 
-const QUOTA = /(daily|free)\s+(free\s+)?allocation|4006|neurons|quota|exceeded.*limit/i;
+/** Only the "you've used the day's free neurons" family — a transient 429 or a subrequest limit must not switch the AI off for the day. */
+const QUOTA = /daily free allocation|free allocation|4006|used up your/i;
 
 export async function runModel(ai: AiBinding, model: string, messages: ChatMessage[], system: string, tools: ModelTool[], maxTokens = 900): Promise<ModelResult> {
   const input: Record<string, unknown> = {
@@ -67,6 +71,9 @@ export async function runModel(ai: AiBinding, model: string, messages: ChatMessa
     max_completion_tokens: maxTokens,
     temperature: 0.2,
   };
+  // Gemma 4 "thinks" before answering by default: ~3× slower and ~5× more output tokens (measured: 2.7 s / 140 tokens vs 0.85 s / 29
+  // for the same tool call). Tool selection and short answers don't need it.
+  if (model.includes('gemma-4')) input.chat_template_kwargs = { enable_thinking: false };
   if (tools.length) Object.assign(input, { tools, tool_choice: 'auto' });
   try {
     return normalise(await ai.run(model, input));

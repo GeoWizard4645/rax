@@ -6,6 +6,7 @@ import TabNav from './components/layout/TabNav';
 import LimitationsBanner from './components/layout/LimitationsBanner';
 import { ToastProvider } from './components/ui/Toast';
 import { Loading } from './components/ui/StateBlock';
+import ChatWidget from './components/agent/ChatWidget';
 
 // One chunk per tab — Recharts only loads when Tab 3 / 5 is opened.
 const RateboardTab = lazy(() => import('./components/tab1-rateboard/RateboardTab'));
@@ -43,6 +44,7 @@ export default function App() {
         </main>
         <Footer />
       </div>
+      <ChatWidget />
     </ToastProvider>
   );
 }

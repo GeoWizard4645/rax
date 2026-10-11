@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-r
 import { Link } from 'react-router-dom';
 import { buildCalendar, buildPortfolio, payoutScale, sportCeilings, type DayCell } from '../../../shared/otdEfficiency';
 import { OTD_SPORTS, type OtdCardRecord, type OtdSport } from '../../../shared/otdSnapshot';
+import { useCalendarSurface } from '../../agent/surfaces/useCalendarSurface';
 import { rax } from '../../lib/format';
 import { Loading } from '../ui/StateBlock';
 import { buildPackIndex } from '../../../shared/raxedgePackOdds';
@@ -121,6 +122,8 @@ export default function CalendarTab() {
   const atStart = year === firstYear && month === 1;
   const atEnd = year === lastYear && month === 12;
   const sportSet = [...new Set([...selCells.map((c) => c.pool), ...suggestions.keys()])] as OtdSport[];
+
+  useCalendarSurface({ s, set, month, setMonth, year, setYear, firstYear, lastYear, claims, setClaims, source, setSource, sportsSel, setSportsSel, ownedCards: ownedCards.length, shownCards: shown.length, monthTotal, overlapDays: overlapDays.length, yearStats });
 
   return (
     <div className="space-y-4">

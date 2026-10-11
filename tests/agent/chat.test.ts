@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { remaining, testing } from '../../functions/_lib/budget';
-import { MAX_ITERATIONS, runChat, sanitizeMessages } from '../../functions/_lib/chatCore';
+import { MAX_ITERATIONS, parseArgs, runChat, sanitizeMessages } from '../../functions/_lib/chatCore';
 import { buildSystemPrompt, renderContext } from '../../shared/agent/prompt';
 import type { AgentContext, ChatMessage } from '../../shared/agent/types';
 import { toolCtx } from './kbFixture';
@@ -186,5 +186,43 @@ describe('budget + failure handling', () => {
   it('strips inline reasoning from answers', async () => {
     const { res } = await run([say('<think>hmm let me see</think>The answer is 4.')], [user('2+2')]);
     expect(res.ok && res.messages.at(-1)!.content).toBe('The answer is 4.');
+  });
+});
+
+describe('tool-argument parsing', () => {
+  it('parses plain, empty and glued JSON', () => {
+    expect(parseArgs('{"a":1}')).toEqual([{ a: 1 }]);
+    expect(parseArgs('')).toEqual([{}]);
+    expect(parseArgs('{"a":1}{"a":2}')).toEqual([{ a: 1 }, { a: 2 }]);
+    expect(parseArgs('{"a":1} {"b":{"c":2}}')).toEqual([{ a: 1 }, { b: { c: 2 } }]);
+    expect(parseArgs('{oops')).toBeNull();
+  });
+  it('runs glued parallel calls and returns every result', async () => {
+    const glued = () => ({ choices: [{ message: { content: '', tool_calls: [{ id: 'g', type: 'function', function: { name: 'calculate', arguments: '{"expression":"1+1"}{"expression":"2+2"}' } }] } }], usage: { prompt_tokens: 10, completion_tokens: 5 } });
+    const { res } = await run([glued, say('ok')], [user('two sums')]);
+    if (!res.ok) throw new Error('expected ok');
+    const out = JSON.parse(res.messages.find((m) => m.role === 'tool')!.content!);
+    expect(out.results.map((r: any) => r.result)).toEqual([2, 4]);
+  });
+});
+
+describe('prompt economy', () => {
+  it('skips doc retrieval for pure commands but not for questions about them', async () => {
+    const cmd = await run([say('ok')], [user('set the budget to 50k')]);
+    expect(cmd.ai.calls[0].input.messages[0].content).not.toContain('Reference passages');
+    const q = await run([say('ok')], [user('how do I set the budget so the combination is realistic?')]);
+    expect(q.ai.calls[0].input.messages[0].content).toContain('Reference passages');
+  });
+  it('turns Gemma\'s thinking off and uses the terse tool descriptions', async () => {
+    const { ai } = await run([say('ok')], [user('hello there')]);
+    expect(ai.calls[0].input.chat_template_kwargs).toEqual({ enable_thinking: false });
+    const calc = ai.calls[0].input.tools.find((t: any) => t.function.name === 'calculate');
+    expect(calc.function.description.length).toBeLessThan(150);
+  });
+  it('uses the neurons Workers AI reports when present', async () => {
+    const e = env();
+    await run([() => ({ choices: [{ message: { content: 'x' } }], usage: { prompt_tokens: 1, completion_tokens: 1, neurons: 321 } })], [user('hello')], e);
+    const { left } = await remaining(e);
+    expect(left).toBeCloseTo(8000 - 321, 0);
   });
 });

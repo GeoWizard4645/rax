@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { LogOut, RefreshCw } from 'lucide-react';
 import { RB_SPORTS, type RbSport } from '../../../shared/rateboard';
 import { useRbBoard } from '../../hooks/useRbBoard';
+import { useRateboardSurface } from '../../agent/surfaces/useSimpleSurfaces';
 import { load, save } from '../../lib/storage';
 import { removeOffer } from '../../lib/rateboardClient';
 import { ErrorBlock, Loading } from '../ui/StateBlock';
@@ -31,6 +32,7 @@ function BoardView() {
   const [hidden, setHidden] = useState(() => load<boolean>(HIDE_KEY, false));
   const [editId, setEditId] = useState<string | null>(null);
   useEffect(() => void save(SPORT_KEY, sport), [sport]);
+  useRateboardSurface({ sport, setSport, mode, setMode, board, me, refresh: () => void refresh(true), hidden });
 
   const removeMine = async (id: string) => {
     if (!key) return;

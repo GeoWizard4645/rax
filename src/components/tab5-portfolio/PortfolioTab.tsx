@@ -1,10 +1,13 @@
 import { useState } from 'react';
+import { usePortfolioSurface } from '../../agent/surfaces/useSimpleSurfaces';
+import { load } from '../../lib/storage';
 import { Segmented } from '../ui/Segmented';
 import AssetDownloader from './AssetDownloader';
 import EarningsAudit from './EarningsAudit';
 
 export default function PortfolioTab() {
   const [view, setView] = useState<'audit' | 'assets'>('audit');
+  usePortfolioSurface({ view, setView, auditRows: load<unknown[]>('rax_audit_rows_v1', []).length });
   return (
     <div className="space-y-4">
       <div>

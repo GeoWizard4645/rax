@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMarketSpikes, type MarketSportFilter } from '../../hooks/useMarketSpikes';
 import { useRateHistory } from '../../hooks/useRateHistory';
 import { loadSnapshot } from '../../lib/snapshots';
+import { useVolatilitySurface } from '../../agent/surfaces/useSimpleSurfaces';
 import { SPORTS } from '../../../shared/formulas';
 import { DataBadge, SampleNotice } from '../ui/DataBadge';
 import { ErrorBlock, Loading } from '../ui/StateBlock';
@@ -67,6 +68,10 @@ export default function VolatilityTab() {
   const cov = data?.coverage ?? hist.data?.coverage ?? null;
   const waiting = rate && cov && !cov.ready ? `${cov.spanDays.toFixed(1)} day(s) recorded; needs 3. Current rates, buyer counts and the depth-vs-rate chart below are real and already available.` : undefined;
   const sports = rate ? RB_SPORT_LIST : (SPORTS as readonly string[]);
+  useVolatilitySurface({
+    source, setSource: switchSource, availableSources: options.filter((o) => o.available).map((o) => o.value), sport, setSport, allowedSports: rate ? RB_SPORT_LIST : (SPORTS as readonly string[]),
+    players: data?.players ?? [], selected, setSelected, spikes: data?.spikes ?? [], fair: data?.fair ?? [], dataSource: data?.source, slope: data?.model?.slope, r2: data?.model?.r2, historyDays: cov?.spanDays,
+  });
 
   return (
     <div className="space-y-4">

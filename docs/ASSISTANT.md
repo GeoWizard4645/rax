@@ -1,0 +1,51 @@
+# The in-app assistant (chat bubble)
+
+A small chat bubble sits bottom-right on every tab. It answers questions about Real and the site, does calculations, opens tabs and **changes the calculators' inputs for you** — and it knows what you've entered on every tab.
+
+## What it can do
+
+- **Answer** from Real's public docs (`docs.realapp.link`: cards, Rax, Karma, OTD, Pro, packs, Arena, changelog), this repo's research notes and the [site guide](SITE-GUIDE.md), citing the source link. When the docs don't say, it says "not documented / estimate".
+- **Calculate** with the site's own code: OTD payouts and payback, the rarity ladder, EV / Kelly, odds conversion and de-vig, Rateboard owed-Rax, plain arithmetic (never "in its head").
+- **Fetch live data** the way the site does: upcoming games with consensus odds (Tab 9's data), the game schedule.
+- **Act on the page:** "take me to the calendar", "set Tab 7 to Iconic, 90 days, NFL only, budget 50k", "half Kelly with a 2,000 bankroll". It validates every value (enums, ranges, `50k` → 50,000), opens the tab if needed, applies the change, tells you what changed, and **Undo** (header button, or "undo") restores the previous values. It cannot sign in, post/edit/remove Rateboard offers, spend anything or touch passwords.
+- **Know your context:** every tab registers what it holds (inputs, selections, headline results such as the top cards or the best-EV board). Tabs you opened earlier keep their last state; tabs you haven't opened since loading are summarised from what they saved in your browser. The **Context** button shows exactly what it sees, plus an activity log of what you and it changed.
+
+## How it works
+
+```
+ browser                                        Cloudflare Pages Function  /api/chat            Workers AI
+ ───────                                        ─────────────────────────                     ──────────
+ bridge: tabs register summary + params ──▶  system prompt = rules + what's on screen
+ chat widget sends history + context           + top-3 BM25 passages from the knowledge base ──▶ gemma-4-26b-a4b-it
+                                                loop (≤ 4 rounds): model → tool calls          (function calling)
+   page tools run in the browser   ◀── navigate / get_page_state / set_params / run_action / undo
+   server tools run at the edge    ──▶ search_docs, calculate, otd_*, ev_calc, odds_*, live_odds, schedule, …
+```
+
+- **Model:** `@cf/google/gemma-4-26b-a4b-it` on Workers AI (override with the `CHAT_MODEL` var; falls back once to `@cf/openai/gpt-oss-20b` on a model error).
+- **"Trained on Real" without training:** retrieval-augmented. `npm run kb` fetches Real's public docs (`llms.txt` → each page as Markdown), adds this repo's `README.md` and `docs/*.md`, chunks them and writes a BM25 inverted index + per-document shards to `public/data/kb/` (committed). No embeddings, so no neurons are spent on retrieval. Re-run `npm run kb` when Real's docs or ours change.
+- **Page tools:** `shared/agent/clientTools.ts` (schemas) → `src/agent/clientTools.ts` (execution) → `src/agent/bridge.ts` (validation against `src/agent/catalog.ts`, undo stack, activity log). Each tab binds its state with `useAgentSurface` (`src/agent/surfaces/*`).
+- **Safety:** the browser's history is re-sanitised server-side (no `system` messages, tool-call pairing checked, sizes capped); tool results and page state are labelled as data, not instructions; page tools are limited to harmless, undoable input changes; model output is rendered by a small React markdown renderer (no HTML injection; only https/same-site links).
+
+## Cost: $0, enforced
+
+Workers AI includes **10,000 neurons/day free**; on a Workers *Paid* plan anything above that bills at $0.011/1,000. `functions/_lib/budget.ts` therefore counts neurons itself (token usage × the published per-model rates, stored in KV under a per-UTC-day key) and stops calling the model at `AI_DAILY_NEURONS` (default **8,000**). A typical question is ~40 neurons per model call (≈ 200 calls/day), a multi-tool question 100–150. A Workers-AI "allocation used" error also marks the day as spent. Soft per-IP rate limit: 40 chat requests / 10 min.
+
+When the allowance is gone (resets 00:00 UTC) or the model is unreachable, the widget switches to an **offline helper** (`src/agent/offline.ts`): no AI, but it still opens tabs, changes parameters from "set X to Y" phrasing, undoes, does arithmetic and answers questions by showing the best-matching docs passages (`/api/docs/search`).
+
+## Privacy
+
+Everything you enter stays in your browser (localStorage). When you send a message, the text, the conversation and the context shown in the **Context** panel go to Cloudflare Workers AI to produce the answer; nothing is stored server-side. The assistant never sees Rateboard passwords or sign-in tokens (no tab exposes them).
+
+## Configuration
+
+| Setting | Where | Default |
+|---|---|---|
+| `[ai] binding = "AI"` | `wrangler.toml` | enabled |
+| `CHAT_MODEL` | Pages var | `@cf/google/gemma-4-26b-a4b-it` |
+| `AI_DAILY_NEURONS` | Pages var | `8000` |
+| KV `CACHE` | `wrangler.toml` | already bound (budget counter) |
+
+## Tests
+
+`tests/agent/` (knowledge base, tools, MCP protocol, chat loop with a fake model, budget, sanitising) and `tests/lib/agent-bridge.test.ts` (validation, undo, navigation, activity log).

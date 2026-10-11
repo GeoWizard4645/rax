@@ -67,6 +67,8 @@ export interface ToolSpec {
   inputSchema: JsonSchema;
   /** Offered to the in-app model too? Heavy/rarely useful tools are MCP-only to keep the chat prompt small. */
   chat: boolean;
+  /** Terser description for the in-app model (every prompt token costs free-tier neurons); MCP clients get `description`. */
+  chatDescription?: string;
   handler: (args: Record<string, unknown>, ctx: ToolCtx) => Promise<unknown>;
 }
 
@@ -135,6 +137,7 @@ export const TOOLS: ToolSpec[] = [
       required: ['query'],
       additionalProperties: false,
     },
+    chatDescription: "Search Real's public docs, this site's notes and the site guide; returns passages with source URLs. Use for any 'how does X work' question.",
     chat: true,
     async handler(a, ctx) {
       const query = strArg(a, 'query', { required: true, max: 300 })!;
@@ -176,6 +179,7 @@ export const TOOLS: ToolSpec[] = [
     description:
       "Real's card rules as encoded in this site: the rarity ladder (multiplier, total rating needed, annual OTD cap), per-sport rating→Rax factors, OTD claim rules (with how certain each is), or pack prices.",
     inputSchema: { type: 'object', properties: { section: { type: 'string', enum: ['ladder', 'sport_factors', 'claims', 'packs'] } }, required: ['section'], additionalProperties: false },
+    chatDescription: 'Card rules tables: section = ladder (multiplier, rating needed, cap), sport_factors, claims, packs.',
     chat: true,
     async handler(a) {
       const section = enumArg(a, 'section', ['ladder', 'sport_factors', 'claims', 'packs'] as const)!;
@@ -208,6 +212,7 @@ export const TOOLS: ToolSpec[] = [
       required: ['rarity'],
       additionalProperties: false,
     },
+    chatDescription: "Payout of one card at a rarity: annual payout from season General Rax, per-claim payout for a day, cost to reach it, payback days. Rarity e.g. 'Iconic', 'Legendary 3'.",
     chat: true,
     async handler(a) {
       const key = rungInfo(strArg(a, 'rarity', { required: true })!);
@@ -247,6 +252,7 @@ export const TOOLS: ToolSpec[] = [
       },
       additionalProperties: false,
     },
+    chatDescription: 'Best OTD cards in the observed dataset by annual payout or payback at a rarity (optional sport/player filter). Full-year, ignores overlaps.',
     chat: true,
     async handler(a, ctx) {
       const idx = await ctx.kb.otdIndex();
@@ -288,6 +294,7 @@ export const TOOLS: ToolSpec[] = [
       required: ['fairProb', 'realPct'],
       additionalProperties: false,
     },
+    chatDescription: "EV%, break-even %, edge and Kelly stake for Real's prediction market from a fair probability and the % Real shows (default rake 5%, unknown in reality).",
     chat: true,
     async handler(a) {
       const fair = prob(numArg(a, 'fairProb', { required: true, min: 0, max: 100 })!);
@@ -327,6 +334,7 @@ export const TOOLS: ToolSpec[] = [
       },
       additionalProperties: false,
     },
+    chatDescription: 'Convert American/decimal/fractional odds and probability (give exactly one).',
     chat: true,
     async handler(a) {
       let p: number;
@@ -356,6 +364,7 @@ export const TOOLS: ToolSpec[] = [
       },
       additionalProperties: false,
     },
+    chatDescription: 'Remove the vig from outcome odds (american[] or probabilities[]) → fair probabilities.',
     chat: true,
     async handler(a) {
       const am = Array.isArray(a.american) ? (a.american as unknown[]).map(Number) : null;
@@ -383,6 +392,7 @@ export const TOOLS: ToolSpec[] = [
       required: ['sport'],
       additionalProperties: false,
     },
+    chatDescription: 'Upcoming games with consensus no-vig win probabilities (Kalshi, Polymarket, DraftKings) for one sport.',
     chat: true,
     async handler(a, ctx) {
       if (!ctx.getJson) throw new ToolError('Live data is not available in this context.');
@@ -424,6 +434,7 @@ export const TOOLS: ToolSpec[] = [
       },
       additionalProperties: false,
     },
+    chatDescription: 'Upcoming games (teams, time, broadcaster) for NFL/NBA/MLB/NHL/CFB/CBB.',
     chat: true,
     async handler(a, ctx) {
       if (!ctx.getJson) throw new ToolError('Live data is not available in this context.');
@@ -444,6 +455,7 @@ export const TOOLS: ToolSpec[] = [
       required: ['rating', 'rate'],
       additionalProperties: false,
     },
+    chatDescription: 'Rax a buyer owes for a card (rating × rate, nearest 10) plus the Rateboard copy message.',
     chat: true,
     async handler(a) {
       const rating = numArg(a, 'rating', { required: true, min: 0 })!;
@@ -467,6 +479,7 @@ export const TOOLS: ToolSpec[] = [
     title: 'Calculator',
     description: 'Evaluate an arithmetic expression exactly: + - * / ^ %, parentheses, sqrt abs round floor ceil ln log exp pow min max avg sum, constants pi e. "15%" is 0.15. Use this for any non-trivial arithmetic instead of computing in your head.',
     inputSchema: { type: 'object', properties: { expression: { type: 'string', description: 'e.g. "(1200*0.35 + 300) / 12".' } }, required: ['expression'], additionalProperties: false },
+    chatDescription: "Exact arithmetic: + - * / ^ %, parentheses, sqrt/round/min/max/avg…; '15%' = 0.15. Use for any non-trivial maths.",
     chat: true,
     async handler(a) {
       const expression = strArg(a, 'expression', { required: true, max: 400 })!;

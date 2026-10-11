@@ -66,7 +66,7 @@ export function sanitizeMessages(input: unknown): ChatMessage[] {
 
 const toModelTool = (name: string, description: string, parameters: unknown): ModelTool => ({ type: 'function', function: { name, description, parameters } });
 const MODEL_TOOLS: ModelTool[] = [
-  ...TOOLS.filter((t) => t.chat).map((t) => toModelTool(t.name, t.description, t.inputSchema)),
+  ...TOOLS.filter((t) => t.chat).map((t) => toModelTool(t.name, t.chatDescription ?? t.description, t.inputSchema)),
   ...CLIENT_TOOLS.map((t) => toModelTool(t.name, t.description, t.inputSchema)),
 ];
 const SERVER_TOOL_NAMES = new Set(TOOLS.filter((t) => t.chat).map((t) => t.name));
@@ -88,12 +88,30 @@ const STATUS: Record<string, string> = {
 };
 
 const GREETING = /^\s*(hi|hello|hey|yo|thanks|thank you|ok|okay|cool|nice|help)\b[\s!.?]*$/i;
+/** Pure page commands ("set budget to 50k", "open the calendar") don't need doc passages — skipping them saves ~600 prompt tokens. */
+const COMMAND = /^\s*(please\s+)?(set|change|make|switch|update|use|put|adjust|open|go to|take me|navigate|show me|undo|reset|raise|lower|increase|decrease)\b/i;
 
 async function passagesFor(req: ChatRequest, msgs: ChatMessage[], ctx: ToolCtx): Promise<Passage[]> {
   const last = msgs[msgs.length - 1];
-  if (!last || last.role !== 'user' || !last.content || GREETING.test(last.content)) return [];
+  if (!last || last.role !== 'user' || !last.content || GREETING.test(last.content) || (COMMAND.test(last.content) && !/\b(why|how|what|explain|tell me|\?)/i.test(last.content))) return [];
   const hits = await ctx.kb.search(`${last.content.slice(0, 300)} ${req.context.route.replace(/\//g, ' ')}`, 3).catch(() => []);
   return hits.map((h) => ({ title: h.docTitle, heading: h.heading, url: h.url, text: h.text }));
+}
+
+/** `{"a":1}` → [{a:1}];  `{"a":1}{"a":2}` → two objects; anything else → null. */
+export function parseArgs(raw: string): unknown[] | null {
+  if (!raw || !raw.trim()) return [{}];
+  try {
+    return [JSON.parse(raw)];
+  } catch {
+    const parts = raw.trim().replace(/\}\s*\{/g, '}\u0000{').split('\u0000');
+    if (parts.length < 2 || parts.length > 4) return null;
+    try {
+      return parts.map((p) => JSON.parse(p));
+    } catch {
+      return null;
+    }
+  }
 }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…(truncated)` : s);
@@ -132,7 +150,7 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
       }
       return { ok: false, code: 'model_error', message: `The AI model failed: ${e instanceof Error ? clip(e.message, 200) : 'unknown error'}` };
     }
-    await record(deps.env, estimateNeurons(model, res.promptTokens, res.completionTokens), now);
+    await record(deps.env, res.neurons ?? estimateNeurons(model, res.promptTokens, res.completionTokens), now);
 
     if (!res.toolCalls.length || final) {
       added.push({ role: 'assistant', content: res.content || "I couldn't put together an answer — could you rephrase?" });
@@ -151,15 +169,13 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
       deps.onStatus?.(STATUS[name] ?? `Running ${name}…`);
       if (!SERVER_TOOL_NAMES.has(name)) result = { error: `Unknown tool "${name}".` };
       else {
-        let args: unknown = {};
-        try {
-          args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
-        } catch {
-          result = { error: 'Tool arguments were not valid JSON.' };
-        }
-        if (result === undefined) {
-          const out = await runTool(name, args, deps.tools);
-          result = out.ok ? out.result : { error: out.error };
+        const argsList = parseArgs(call.function.arguments);
+        if (!argsList) result = { error: 'Tool arguments were not valid JSON.' };
+        else {
+          // some models emit parallel calls glued into one arguments string: run each and return the list
+          const outs = await Promise.all(argsList.map((a) => runTool(name, a, deps.tools)));
+          const vals = outs.map((o) => (o.ok ? o.result : { error: o.error }));
+          result = vals.length === 1 ? vals[0] : { results: vals };
         }
       }
       added.push({ role: 'tool', tool_call_id: call.id, name, content: clip(JSON.stringify(result), LIMITS.tool) });

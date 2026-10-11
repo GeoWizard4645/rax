@@ -9,6 +9,7 @@
     "build": "npm run typecheck && vite build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p functions",
     "test": "vitest run",
+    "kb": "node scripts/build-kb.mjs",
     "preview": "npm run build && wrangler pages dev dist --kv CACHE --port 8788",
     "pages:dev": "wrangler pages dev dist --kv CACHE --port 8788",
     "dev:full": "npm run build && (wrangler pages dev dist --kv CACHE --port 8788 & vite)"

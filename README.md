@@ -13,7 +13,14 @@ An unofficial analytics and scouting terminal for Real App cards, built for **Cl
 | 7 · OTD Efficiency | Which cards (and which rarity) earn the most OTD Rax per Rax spent, over a chosen timeframe; overlap-aware best combination; sport outlook; upgrade ladder; swap calculator | **Observed** snapshot of Real's per-game Rax (via Rateboard) or **Modeled** from ESPN stats — switchable; prices are estimates |
 | 9 · Edge / EV | No-vig fair probabilities for every upcoming game from Kalshi, Polymarket and DraftKings-via-ESPN (per source + consensus, moneyline / spread / total); type Real's displayed % to get EV, edge, fractional-Kelly stake, a sensitivity table and a Best-EV board; editable Real rake assumptions; beginner guide | **Live** free public odds, refreshed every 60 s; Real's own % is typed by you (login-gated, Pro-only) |
 
+| — | Assistant + MCP | A chat bubble on every tab (answers from Real's docs, does the maths, opens tabs, changes your inputs, undoable; free Workers AI) and a public read-only **MCP server** at `/mcp` (button at the top right) so Instinct / Claude / Cursor can use the same tools | Real's public docs + this repo's notes (BM25), live odds/schedule via the site's own endpoints |
+
 Every panel that can show synthetic data carries a **SAMPLE DATA** badge. Nothing synthetic is presented as live.
+
+## Assistant & MCP
+
+- **MCP server** — `https://rax.vivaanshahani.com/mcp` (Streamable HTTP, public, read-only). Setup for Instinct, Claude, Cursor, VS Code and stdio-only clients: [docs/MCP.md](docs/MCP.md) or the **MCP** button in the header.
+- **Chat assistant** — bubble bottom-right on every tab; Cloudflare Workers AI (free tier, capped at 8,000 neurons/day by `functions/_lib/budget.ts`), retrieval over Real's docs + these notes, can change tab parameters and undo. [docs/ASSISTANT.md](docs/ASSISTANT.md). Rebuild its knowledge base with `npm run kb`.
 
 ## Develop
 
@@ -23,6 +30,7 @@ npm run dev          # Vite on :5173 (proxies /api → :8788)
 npm run build        # typecheck (app + functions) and build to dist/
 npm run pages:dev    # serve dist/ + Pages Functions locally on :8788 (run build first)
 npm test             # unit tests (vitest)
+npm run kb           # rebuild the assistant's knowledge base (public/data/kb/) from Real's docs + docs/*.md
 ```
 Run `npm run build && npm run pages:dev` in one terminal and `npm run dev` in another for hot reload with real functions.
 

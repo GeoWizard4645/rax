@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { QUAD_PAYOUTS, SQUAD_SIZE, squadTotal } from '../../../shared/quads';
 import { samplePolls } from '../../../shared/sample';
+import { useQuadsSurface } from '../../agent/surfaces/useSimpleSurfaces';
 import { useSchedule } from '../../hooks/useSchedule';
+import { load } from '../../lib/storage';
 import { DataBadge } from '../ui/DataBadge';
 import { ErrorBlock, Loading } from '../ui/StateBlock';
 import { Segmented } from '../ui/Segmented';
@@ -17,6 +19,7 @@ export default function QuadsTab() {
   const gameId = picked && games.some((g) => g.id === picked) ? picked : games.find((g) => g.marquee)?.id ?? games[0]?.id ?? null;
   // Community poll results aren't available from any free source, so they stay synthetic — on real matchups.
   const polls = useMemo(() => samplePolls(games, Date.now()), [games]);
+  useQuadsSurface({ view, setView, games, gameId, setPicked, source: data?.source, squad: load<unknown[]>('rax_squad_board_v1', []).length });
 
   return (
     <div className="space-y-4">

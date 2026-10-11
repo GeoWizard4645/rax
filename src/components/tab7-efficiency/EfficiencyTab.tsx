@@ -3,6 +3,7 @@ import { rankCards, type EfficiencyParams, type PortfolioOptions } from '../../.
 import type { OtdSport } from '../../../shared/otdSnapshot';
 import { buildPackIndex, coverage } from '../../../shared/raxedgePackOdds';
 import { useRaxEdge } from '../../lib/raxedgeStore';
+import { useEfficiencySurface } from '../../agent/surfaces/useEfficiencySurface';
 import { Explain } from '../ui/Explain';
 import { Segmented } from '../ui/Segmented';
 import { Loading } from '../ui/StateBlock';
@@ -63,6 +64,8 @@ export default function EfficiencyTab() {
     else o[id] = levels.get(id)?.key ?? 'Iconic';
     return { ...x, ownedLevels: o };
   }), [levels, setS]);
+
+  useEfficiencySurface({ s, set, view, setView, rows, levels, days, snap, all, owned: ownedSet });
 
   return (
     <div className="space-y-4">

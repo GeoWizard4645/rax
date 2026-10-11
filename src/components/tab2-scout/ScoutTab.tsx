@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
+import { useScoutSurface } from '../../agent/surfaces/useSimpleSurfaces';
 import { useAuctions } from '../../hooks/useAuctions';
 import { clearSnapshot, loadSnapshot, snapshotToResponse, type Snapshot } from '../../lib/snapshots';
 import ImportPanel from './ImportPanel';
@@ -64,6 +65,7 @@ export default function ScoutTab() {
   }, [data]);
 
   const matches = useMemo(() => (data ? matchBids(data.bids, col.collections).length : 0), [data, col.collections]);
+  useScoutSurface({ username: input, setUsername: setInput, view, setView, discount, setDiscount, stats, source: data?.source, imported: !!imported, matches, pulling: col.pulling ? String(col.pulling) : null, collectionsLoaded: Object.keys(col.collections), submit, reload });
 
   const options: SourceOption[] = [
     {

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import McpButton from '../agent/McpButton';
 
 export default function Header() {
   return (
@@ -11,7 +12,10 @@ export default function Header() {
             <span className="block text-[11px] text-muted">RealApp Super-Suite</span>
           </span>
         </Link>
-        <span className="hidden text-[11px] text-muted sm:block">Unofficial · not affiliated with Real</span>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-[11px] text-muted sm:block">Unofficial · not affiliated with Real</span>
+          <McpButton />
+        </div>
       </div>
     </header>
   );
