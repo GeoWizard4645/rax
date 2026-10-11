@@ -7,6 +7,11 @@ pages_build_output_dir = "./dist"
 binding = "CACHE"
 id = "e17e5f0373004179bef1230c5606bfe7"
 
+# Workers AI powers the in-app assistant (/api/chat). Free tier: 10,000 neurons/day; functions/_lib/budget.ts stops at
+# AI_DAILY_NEURONS (default 8,000) so the account never bills. See docs/ASSISTANT.md.
+[ai]
+binding = "AI"
+
 [vars]
 # Optional upstream configuration — see README "Configuration".
 # Real's public image CDN — enables the Tab 5 asset downloader.

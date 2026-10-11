@@ -1,0 +1,117 @@
+# RAX site guide — every tab, every control, and what the assistant can change
+
+This is the reference the in-app assistant (the chat bubble, bottom-right) and the MCP server (`/mcp`) read from. It describes the
+website at **rax.vivaanshahani.com**: an unofficial analytics and scouting terminal for **Real** (the sports app at realapp.com —
+"Real Sports") cards, Rax and predictions. Not affiliated with Real. Not financial advice.
+
+## Vocabulary
+
+- **Real** — the sports social app. **Rax** is its in-app currency; **Karma** is the reputation score earned from polls.
+- **Cards** — Player cards (one per player-season, 200 Rax to claim), Team cards, Play / Performance cards (a moment or a game stat line, with a rating), UFC fighter cards. A player card **levels up** by the *summed rating* of the Play cards you own for that player-season: General → Common → Uncommon → Rare → Epic → Legendary 1–5 → Mystic 1–10 → Iconic 1–20.
+- **Multiplier** — each level multiplies the card's per-game Rax (General = 1×, Common 2×, … Iconic 1 = 150×). Below Iconic a card's annual earning is capped (≈ 500 General Rax × multiplier); Iconic is uncapped.
+- **OTD (On This Day)** — you can claim Rax on the *anniversary* of a past game your previous-season card played in. Payout for a claim = that day's General-level Rax × the card's multiplier. 2 guaranteed claims per sport per day; Real Pro adds one bonus claim (poll-dependent).
+- **Rateboard** (rateboard-cgi.pages.dev) — a community board where buyers post offers for Play cards, quoted as a *rate* (Rax per rating point, e.g. "20/1"; the floor is 8). Tab 1 is a wrapper around it.
+- **Real predictions** — a Pro-only prediction market paid in Rax; the displayed percentage is the community's implied probability and lower percentage = higher payout. Tab 9 compares it with fair odds from other markets.
+
+## Tabs (routes)
+
+| Tab | Route | Purpose |
+|---|---|---|
+| 1 Rateboard | `/rateboard` | Live window onto the Rateboard offer board: browse offers, post/edit/remove your own buy offers, match your collection against buyers, copy-ready DM messages |
+| 2 Scout | `/scout` | Overpriced-auction radar, "proactive scout" (find bidders on cards you own, write the DM), repeat contenders |
+| 3 Volatility | `/volatility` | Price spikes, fair-value scatter, candles, Monte Carlo price/rating projections (**sample data** until a live feed exists) |
+| 5 Portfolio | `/portfolio` | Daily earnings audit (live games vs OTD claims) and the CDN asset downloader |
+| 6 Quads | `/quads` | Quad matchup pacing, community polls (sample), payout reference, squad board |
+| 7 OTD Efficiency | `/efficiency` | Which cards, at which rarity, earn the most OTD Rax per Rax spent over a timeframe; best combination; upgrade ladder; swaps |
+| 8 OTD Calendar | `/calendar` | A month-by-month calendar of what your cards pay each day, with overlaps flagged and the best cards to add |
+| 9 Edge / EV | `/edge` | No-vig fair probabilities from Kalshi, Polymarket and DraftKings (via ESPN); type Real's % to get EV, edge and a Kelly stake |
+
+(There is no Tab 4: the old "OTD Rax" tab was retired and `/otd` redirects to Tab 7.)
+
+Every panel that can show synthetic data carries a **SAMPLE DATA** badge. Nothing synthetic is presented as live.
+
+## Tab 1 — Rateboard (`/rateboard`)
+
+Real traffic to Rateboard's backend, proxied (`/api/proxy/rateboard`) because Rateboard sends no CORS headers. Pick a **sport** (CFB, FC (soccer), NFL, UFC, NHL), then **Buy** or **Sell** mode.
+Sell mode: enter your Real username to pull your collection and see which buyers' standing offers match your cards (rate × rating, rounded to the nearest 10 Rax), with a copy-message like `i have 87 Player Name 1180` style text. Buy mode: post an offer (player, rate, a link to your comment on Real). Sign-in is Rateboard's own (password hashed in your browser).
+The assistant can: switch the sport and the buy/sell mode, and read how many offers are live and who is signed in (never passwords).
+
+## Tab 2 — Scout (`/scout`)
+
+Per-rating price = highest bid ÷ card rating, compared with that player's 7-day median → **premium %**. Views: *Overpriced Radar*, *Proactive Scout* (needs your Real username; lists bidders on cards you own; the **discount slider** sets your asking price from −30% to +70% relative to their bid, and the DM text is generated), *Repeat Contenders*. Data is sample unless you import your own snapshot ([capture guide](CAPTURE-GUIDE.md)) or a live feed is configured.
+The assistant can: set `username`, `view`, `discount`; run the scout pull (`scout_my_cards`); read the headline numbers.
+
+## Tab 3 — Volatility (`/volatility`)
+
+Velocity-spike screener (>2σ vs the 7-day baseline), valuation scatter (price vs rating with a trendline: cards below the line are "buy alerts"), volume candles, and a seeded **Monte Carlo** projection (fundamental level + decaying hype, seasonal drift, mean reversion, Student-t shocks and jumps; no machine learning; assumptions are priors, not fitted to Real). Sample data until a live feed is configured.
+The assistant can: set `sport` (ALL or a sport) and select a `player` by name.
+
+## Tab 5 — Portfolio (`/portfolio`)
+
+*Earnings audit*: log days and split Rax into live-game earnings vs OTD claims; can compare against cards pulled for a username. *CDN assets*: download Real's original card artwork from `media.realapp.com` through a host-allow-listed proxy. The assistant can switch `view` (audit / assets).
+
+## Tab 6 — Quads (`/quads`)
+
+Quads are 4-person squads that earn Karma-based Rax payouts together (payout reference table on the page). *Matchups & polls* ranks upcoming games by Karma opportunity (pace × polls per game; schedule is live from ESPN's public scoreboards, **poll percentages are synthetic**); *Squad board* tracks your partners. The assistant can switch `view` and select a `game`.
+
+## Tab 7 — OTD Efficiency (`/efficiency`)
+
+The main optimizer. **Payout per card = min(cap, multiplier × Σ General-level Rax)**; **cost = 200 + rating needed × Rax-per-rating** (there is no upgrade fee — a level is just owned rating). It ranks cards over a chosen timeframe, builds the best *combination* of cards greedily by **marginal** payout per Rax (cards that only duplicate days you already cover are skipped), shows an upgrade ladder, sport outlook and a pack/swap calculator. Two datasets: **Observed** (Real's per-game Rax logged by Rateboard — exact, top cards only) and **Modeled** (ESPN stats → fitted rating/Rax model — approximate). Prices are *estimates*; Real publishes no marketplace data. Default rate: 10 Rax per rating (the median of Rateboard's standing offers).
+
+Parameters the assistant can set (all persisted in this browser):
+
+| Parameter | Values | Meaning |
+|---|---|---|
+| `method` | `observed`, `modeled` | which dataset |
+| `timeframe` | `7`, `30`, `90`, `180`, `365`, `5y`, `10y`, `custom` | days (or years) the earnings window covers |
+| `customDays` | 1–365 | used when timeframe is `custom` |
+| `startDate` | `YYYY-MM-DD` or empty (=today) | when the window starts |
+| `capLifetime` | true/false | 5/10-year views: is a card's cap lifetime (true) or does it reset yearly (false, the working assumption) |
+| `proBonusWinPct` | 0–100 | Pro bonus claim: assumed poll win probability (0 ignores the bonus) |
+| `rarity` | `AUTO` or a rung such as `Common`, `Rare`, `Epic`, `Legendary 3`, `Mystic 10`, `Iconic`, `Iconic 20` | the level every card is held at; AUTO picks the fastest payback per card |
+| `autoMinRarity` | rung | AUTO never goes below this |
+| `multiplierOverride` | number, 0 = Real's | override the multiplier for the chosen rung |
+| `sports` | list of `NFL NBA MLB NHL CBB CFB PGA WNBA SOC UFC`; empty = all | which sports count |
+| `budget` | Rax | total to spend in the best combination |
+| `maxCards` | 1–60 | how many cards the combination may hold |
+| `minReturnPct` | ≥ 0 | skip cards earning less than this share of their cost inside the window |
+| `hold` | `keep`, `flip` | keep the cards, or sell at the end of the window |
+| `flipLossPct` | 0–100 | share of price lost when flipping |
+| `overlapMode` | `earnings`, `min-overlap` | maximise total claimable payout, or penalise payout your claim slots can't take |
+| `ratePerRating` | ≥ 1 | Rax per rating point (price of play cards) |
+| `view` | `rank`, `portfolio`, `mine`, `outlook`, `ladder`, `swaps` | which panel is open |
+
+"My cards" (the cards you own) is shared with Tab 8; you can import exact passes from RaxEdge in your own browser ([guide](RAXEDGE-IMPORT.md)).
+
+## Tab 8 — OTD Calendar (`/calendar`)
+
+Month grid of what your cards (from Tab 7's *My cards*) pay each day. 2 guaranteed claims per sport per day (3 with Pro's bonus); days where payout is lost to the limit are flagged as **overlap**; for any day it suggests the best cards to add. Source can be *mine* or *best* (the optimizer's preview over the whole year). It reuses all Tab 7 parameters above. Assistant-settable here: `month` (1–12), `year`, `claims` (2 or 3), `source` (`mine` / `best`), plus every Tab 7 parameter.
+
+## Tab 9 — Edge / EV (`/edge`)
+
+For each upcoming game it builds a **consensus fair probability** from three free public sources — Kalshi and Polymarket (exchanges: already vig-free, weighted by volume/spread) and DraftKings lines embedded in ESPN's scoreboard (de-vigged proportionally or by the power method) — for moneyline, spread and total. You type the % that Real shows for a side; the page computes **EV%**, **edge** (fair − Real) and a **fractional-Kelly stake**, plus a sensitivity table and a Best-EV board across everything you've entered. FanDuel is not used (no public API). Real's own % can't be fetched (login-gated, Pro-only).
+
+EV model (shared/realPayout.ts): a YES share priced at the displayed percentage pays 1 Rax; net multiple = (100/pct) × (1 − rake) (or profit-only rake); EV% = (fair × multiple − 1) × 100; break-even % = fair × (1 − rake). Real's real **rake, stake limits and price impact are unknown** — they're editable assumptions (default rake 5%).
+
+Assistant-settable: `sport` (`NBA NHL MLB WNBA NFL CFB CBB FC UFC`), `bankroll` (Rax), `kellyFraction` (0.125, 0.25, 0.5, 1), `devig` (`proportional` / `power`), `rake` (0–50 %), `rakeBasis` (`payout` / `profit`), `model` (`fixed` / `pool`), `poolRax`, `minStake`, `maxStake`, `view` (`games` / `board`).
+
+## What the assistant (chat bubble) can do
+
+- **Answer questions** about Real's rules (from Real's public docs, `docs.realapp.link`), this site, its formulas and its data sources, citing the doc it used.
+- **Navigate**: "take me to the OTD calendar".
+- **Change parameters** on any tab ("set Tab 7 to Iconic, 90 days, NFL only, budget 50k"); changes are applied for you and can be undone from the chat.
+- **Do calculations** with the site's own code: OTD payouts, rarity ladder, EV/Kelly, odds conversions, de-vig, Rateboard owed Rax, plain arithmetic.
+- **Fetch live data** the same way the site does: upcoming games and odds, schedules.
+- It knows what you've typed or changed on every tab this session (it's shown in the "What I can see" panel in the chat), plus what is saved in your browser for Tabs 7–9.
+- It runs on Cloudflare Workers AI's free tier (a daily allowance). When that's used up it falls back to an offline helper (docs search + navigation + parameter changes) until the allowance resets at 00:00 UTC.
+
+## MCP server (`/mcp`)
+
+A public, read-only Model Context Protocol server (Streamable HTTP, no auth) so other AI apps (Instinct, Claude Desktop, Cursor, VS Code, …) can use the same tools: docs search, OTD payout and ladder calculators, EV / Kelly / odds maths, live odds and schedules, Rateboard maths. The **MCP** button at the top right of the site shows the URL and ready-made config snippets. See [MCP.md](MCP.md).
+
+## Frequently asked
+
+- **Why is a panel labelled SAMPLE DATA?** Real's own API needs a signed-in session, so auction bids, price history and poll percentages can't be pulled; those panels show deterministic sample data, clearly badged.
+- **Where is my data stored?** In your browser (localStorage). Nothing about your cards, entries or bankroll is stored on a server. The assistant sends your question and the context panel's content to Cloudflare Workers AI to answer it, and does not store it.
+- **Are the prices real?** Card prices are estimates built from Rateboard's median offers; overwrite any card's price in the Tab 7 table.
+- **Does pushing to GitHub deploy the site?** No — production is deployed by hand with wrangler (see README).
