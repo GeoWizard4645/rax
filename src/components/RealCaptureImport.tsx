@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Database } from 'lucide-react';
 import { REAL_MARKET_SNIPPET, parseRealCapture, realMarketBookmarklet } from '../../shared/realMarketCapture';
 import { useRealMarket } from '../lib/realMarketStore';
-import { getShare, setShare as saveShare, shareCapture, useCommunityState } from '../lib/communityStore';
+import { shareCapture, useCommunityState } from '../lib/communityStore';
 import { OPEN_CAPTURE_EVENT } from './CommunityData';
 
 /**
  * Shared by Tabs 2 and 3. Records what the user's OWN Real session already shows (Marketplace auctions, and each card's
  * "Market data" stats and recent sales) via a read-only snippet they run on realapp.com, then takes the export pasted back
- * here. Captures accumulate in this browser's storage (src/lib/realMarketStore.ts); nothing is sent anywhere.
+ * here. Captures accumulate in this browser's storage (src/lib/realMarketStore.ts); importing also shares them anonymously (see below).
  */
 export default function RealCaptureImport({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const real = useRealMarket();
@@ -17,7 +17,6 @@ export default function RealCaptureImport({ defaultOpen = false }: { defaultOpen
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [code, setCode] = useState(false);
   const [sure, setSure] = useState(false);
-  const [share, setShare] = useState(getShare); // opt-in, OFF unless the user ticked it before
   const [sharing, setSharing] = useState(false);
   const [shareMsg, setShareMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const community = useCommunityState();
@@ -44,8 +43,7 @@ export default function RealCaptureImport({ defaultOpen = false }: { defaultOpen
     setShareMsg(null);
     if (!r.ok) return;
     setText('');
-    if (!share) return;
-    // Only after the local import has succeeded, and only because the box is ticked. A failure here never touches the local import.
+    // Always shared, but only after the local import has succeeded. A failure here never touches the local import.
     const parsed = parseRealCapture(raw);
     if (!parsed.capture) return;
     setSharing(true);
@@ -69,7 +67,7 @@ export default function RealCaptureImport({ defaultOpen = false }: { defaultOpen
       {open && (
         <div className="panel-bd space-y-3 text-sm text-muted">
           <p>
-            Real shows you every live auction on its Marketplace and, for any card, a “Market data” view (median price, price per rating, total sales, quartiles) with a list of recent sales. This records <b className="text-head">only what is on your screen</b>, as you browse. It runs in <b className="text-head">your own browser on realapp.com while you’re signed in</b>, only <b className="text-head">reads</b> the text already on the page, <b className="text-head">makes no requests</b>, <b className="text-head">clicks nothing</b> and <b className="text-head">sends nothing</b> anywhere — it just gives you text to paste here. Real’s terms discourage bulk data mining, so record what you personally look at, at human speed.
+            Real shows you every live auction on its Marketplace and, for any card, a “Market data” view (median price, price per rating, total sales, quartiles) with a list of recent sales. This records <b className="text-head">only what is on your screen</b>, as you browse. It runs in <b className="text-head">your own browser on realapp.com while you’re signed in</b>, only <b className="text-head">reads</b> the text already on the page, <b className="text-head">makes no requests</b>, <b className="text-head">clicks nothing</b> and <b className="text-head">sends nothing</b> itself — it just gives you text to paste here (importing it here is what shares it, anonymously). Real’s terms discourage bulk data mining, so record only what you personally look at, at human speed.
           </p>
           <ol className="list-decimal space-y-1 pl-5">
             <li>
@@ -83,31 +81,19 @@ export default function RealCaptureImport({ defaultOpen = false }: { defaultOpen
           {code && <textarea readOnly className="field num min-h-[120px] text-[11px]" value={REAL_MARKET_SNIPPET} onFocus={(e) => e.currentTarget.select()} aria-label="Recorder code" />}
           <textarea className="field num min-h-[64px]" value={text} onChange={(e) => setText(e.target.value)} placeholder='Paste the export here ({"v":1,"kind":"real-market",…)' aria-label="Real market capture" />
           <div className="space-y-1 rounded-md border border-line px-3 py-2 text-xs">
-            <label className="flex items-start gap-2 text-head">
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={share}
-                disabled={community.status === 'unavailable'}
-                onChange={(e) => {
-                  setShare(e.target.checked);
-                  saveShare(e.target.checked);
-                }}
-              />
-              <span>
-                <b>Share this capture anonymously with everyone using RAX</b> <span className="chip-muted">optional · off by default</span>
-              </span>
-            </label>
+            <p className="text-head">
+              <b>Importing shares the capture anonymously with everyone using RAX.</b> <span className="chip-muted">always on</span>
+            </p>
             {community.status === 'unavailable' ? (
-              <p className="text-muted">Community sharing isn’t available on this deployment (no community database is connected).</p>
+              <p className="text-muted">Community sharing isn’t available on this deployment (no community database is connected), so this import stays in your browser.</p>
             ) : (
               <p className="text-muted">
-                When ticked, importing also sends <b className="text-head">only the auctions, sales and market stats in this export</b> to RAX’s shared database, so other users get them as the “Community” data source. No username, account or IP address is stored — just a random id made in this browser, kept only as a salted hash so independent reporters can be counted. Shared rows can’t be edited or taken back individually (they expire on their own: sales after 120 days, auctions 14 days after last seen). <b className="text-head">Real’s terms discourage bulk data mining and redistributing other people’s data</b>: share only what you personally looked at, at human speed, and only if you’re comfortable with that. Importing for yourself never sends anything.
+                Each import also sends <b className="text-head">only the auctions, sales and market stats in this export</b> to RAX’s shared database, so other users get them as the “Community” data source. No username, account or IP address is stored — just a random id made in this browser, kept only as a salted hash so independent reporters can be counted. Shared rows can’t be edited or taken back individually (they expire on their own: sales after 120 days, auctions 14 days after last seen). Don’t import anything you aren’t comfortable sharing.
               </p>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button className="btn-primary btn-sm" disabled={!text.trim() || sharing} onClick={() => void run()}>{sharing ? 'Sharing…' : share ? 'Import and share' : 'Import'}</button>
+            <button className="btn-primary btn-sm" disabled={!text.trim() || sharing} onClick={() => void run()}>{sharing ? 'Sharing…' : community.status === 'unavailable' ? 'Import' : 'Import and share'}</button>
             {real.hasData && (
               <span className="text-xs" title={`Newest capture ${new Date(c.lastCaptureAt ?? c.lastImportAt ?? 0).toLocaleString()} · ${c.imports} import${c.imports === 1 ? '' : 's'}`}>
                 Stored in this browser: <b className="num text-head">{c.auctions.toLocaleString('en-US')}</b> auctions ({c.liveAuctions} live) · <b className="num text-head">{c.sales.toLocaleString('en-US')}</b> sales · <b className="num text-head">{c.stats.toLocaleString('en-US')}</b> market-data view{c.stats === 1 ? '' : 's'} · {real.label}

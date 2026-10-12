@@ -70,8 +70,8 @@ export default function VolatilityTab() {
       available: community.available,
       status: community.available ? `${community.counts.sales} sales` : undefined,
       hint: community.available
-        ? `Sales and market stats other RAX users chose to share anonymously from their own Real sessions — ${community.summary?.rows.total.toLocaleString('en-US')} rows from ${community.summary?.contributors} reporter${community.summary?.contributors === 1 ? '' : 's'}. “Verified only” (≥ 2 independent reporters) is on by default. History only reaches back as far as people have shared.`
-        : 'The community database is empty or unavailable. Tick “Share anonymously” when you import a capture to start it.',
+        ? `Sales and market stats other RAX users shared anonymously from their own Real sessions — ${community.summary?.rows.total.toLocaleString('en-US')} rows from ${community.summary?.contributors} reporter${community.summary?.contributors === 1 ? '' : 's'}. “Verified only” (≥ 2 independent reporters) is on by default. History only reaches back as far as people have shared.`
+        : 'The community database is empty or unavailable. Importing a capture shares it anonymously and starts it.',
     },
     {
       value: 'rateboard',

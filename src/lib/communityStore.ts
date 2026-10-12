@@ -1,15 +1,14 @@
 /**
  * Browser side of the community market database (docs/COMMUNITY-MARKET.md): the user's settings, their anonymous contributor id,
- * fetching (summary always, rows only when the Community source is in use) and the opt-in upload.
+ * fetching (summary always, rows only when the Community source is in use) and the upload.
  *
  * Nothing here runs unless the server has a community database: every failure degrades to "no community data" so the app behaves
- * exactly as it did before. Uploading happens ONLY when the user ticked the share box, and only for an import they just made.
+ * exactly as it did before. Uploading is always on (no setting): it happens only for an import the user just made, and the import panel says so.
  */
 import { useSyncExternalStore } from 'react';
 import type { RealMarketCapture } from '../../shared/realMarketCapture';
 import type { CommunityAuction, CommunityData, CommunitySale, CommunityStat, CommunitySummary } from '../../shared/communityMarket';
 
-export const SHARE_KEY = 'rax_community_share_v1';
 export const VERIFIED_KEY = 'rax_community_verified_v1';
 export const COMBINE_KEY = 'rax_community_combine_v1';
 export const ID_KEY = 'rax_community_id_v1';
@@ -43,9 +42,6 @@ const writeBool = (key: string, v: boolean, st: Store | null = browserStorage())
   notify();
 };
 
-/** Sharing is OFF unless the user turned it on. */
-export const getShare = (st?: Store | null) => readBool(SHARE_KEY, false, st);
-export const setShare = (v: boolean) => writeBool(SHARE_KEY, v);
 /** Verified-only (≥ 2 distinct reporters) is ON by default: it is what the premium and spike calculations should rest on. */
 export const getVerifiedOnly = (st?: Store | null) => readBool(VERIFIED_KEY, true, st);
 export const setVerifiedOnly = (v: boolean) => writeBool(VERIFIED_KEY, v);

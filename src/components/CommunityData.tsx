@@ -8,7 +8,7 @@ export const OPEN_CAPTURE_EVENT = 'rax-open-capture';
 /** Chip carrying the provenance of Community-sourced numbers: "Community database · 12 reporters · updated 5 min ago". */
 export function CommunityBadge({ label }: { label: string }) {
   return (
-    <span className="chip-blue" title="Rows other RAX users chose to share anonymously from their own Real sessions. Not Real’s data feed; every row says how many independent reporters saw it.">
+    <span className="chip-blue" title="Rows other RAX users shared anonymously (every import is shared) from their own Real sessions. Not Real’s data feed; every row says how many independent reporters saw it.">
       <Users size={11} /> {label}
     </span>
   );

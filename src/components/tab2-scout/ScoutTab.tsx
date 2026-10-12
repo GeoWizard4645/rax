@@ -103,8 +103,8 @@ export default function ScoutTab() {
       available: community.available,
       status: community.available ? `${community.counts.auctions} auctions` : undefined,
       hint: community.available
-        ? `Auctions, sales and market stats other RAX users chose to share anonymously from their own Real sessions — ${community.summary?.rows.total.toLocaleString('en-US')} rows from ${community.summary?.contributors} reporter${community.summary?.contributors === 1 ? '' : 's'}. “Verified only” (≥ 2 independent reporters) is on by default. Not Real’s data feed; bidder names are not shown on Real’s cards, so none are listed.`
-        : 'The community database is empty or unavailable. Tick “Share anonymously” when you import a capture to start it.',
+        ? `Auctions, sales and market stats other RAX users shared anonymously from their own Real sessions — ${community.summary?.rows.total.toLocaleString('en-US')} rows from ${community.summary?.contributors} reporter${community.summary?.contributors === 1 ? '' : 's'}. “Verified only” (≥ 2 independent reporters) is on by default. Not Real’s data feed; bidder names are not shown on Real’s cards, so none are listed.`
+        : 'The community database is empty or unavailable. Importing a capture shares it anonymously and starts it.',
     },
     {
       value: 'rateboard',
@@ -150,7 +150,7 @@ export default function ScoutTab() {
         {isCommunity ? (
           <>
             <p>
-              <b className="text-head">Where the data comes from.</b> Other RAX users who ticked “Share anonymously” when they imported a capture from their own Real session. Their auctions, sales and market stats are pooled here; no usernames, IP addresses or accounts are stored. Each row says how many independent people reported it — <b className="text-head">Verified only</b> (on by default) keeps rows that at least 2 different people on different networks reported.
+              <b className="text-head">Where the data comes from.</b> Other RAX users who imported a capture (importing shares it anonymously) from their own Real session. Their auctions, sales and market stats are pooled here; no usernames, IP addresses or accounts are stored. Each row says how many independent people reported it — <b className="text-head">Verified only</b> (on by default) keeps rows that at least 2 different people on different networks reported.
             </p>
             <p>
               The Overpriced Radar works exactly as on a local capture: per-rating price against a real reference (Real’s market stats, then pooled sales, then other live bids). A community auction’s bid and timer are the newest anyone shared, so check the age in the badge.

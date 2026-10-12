@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { combineStores, communityCounts, communityLabel, communityLine, communityToStore, type CommunityData, type CommunitySummary } from '../../shared/communityMarket';
 import { emptyStore, mergeCapture, radarItems } from '../../shared/realMarket';
 import { parseRealCapture } from '../../shared/realMarketCapture';
-import { COMBINE_KEY, ID_KEY, SHARE_KEY, VERIFIED_KEY, contributorId, getCombine, getShare, getVerifiedOnly } from '../../src/lib/communityStore';
+import { COMBINE_KEY, ID_KEY, VERIFIED_KEY, contributorId, getCombine, getVerifiedOnly } from '../../src/lib/communityStore';
 
 const NOW = Date.parse('2026-10-11T18:00:00Z');
 const cap = parseRealCapture(fs.readFileSync('tests/fixtures/real/capture_sample.json', 'utf8')).capture!;
@@ -89,16 +89,14 @@ describe('labels and counts', () => {
 });
 
 describe('settings and identity', () => {
-  it('sharing is OFF by default; verified-only and combine are ON; the choices are remembered', () => {
+  it('verified-only and combine are ON by default; the choices are remembered', () => {
     const s = mem();
-    expect(getShare(s)).toBe(false);
     expect(getVerifiedOnly(s)).toBe(true);
     expect(getCombine(s)).toBe(true);
-    s.setItem(SHARE_KEY, '1');
     s.setItem(VERIFIED_KEY, '0');
     s.setItem(COMBINE_KEY, '0');
-    expect([getShare(s), getVerifiedOnly(s), getCombine(s)]).toEqual([true, false, false]);
-    expect(getShare({ getItem: () => { throw new Error('blocked'); }, setItem: () => {} })).toBe(false); // blocked storage → still off
+    expect([getVerifiedOnly(s), getCombine(s)]).toEqual([false, false]);
+    expect(getVerifiedOnly({ getItem: () => { throw new Error('blocked'); }, setItem: () => {} })).toBe(true); // blocked storage → defaults
   });
   it('the contributor id is 128 random bits, made once and reused', () => {
     const s = mem();

@@ -1,8 +1,8 @@
 /**
  * Community market — contribute  —  POST /api/market/contribute   body { capture, contributor }
  *
- * The OPT-IN half of the shared market database (docs/COMMUNITY-MARKET.md): a browser that has just imported a Real market
- * capture may send the same capture here, anonymously, so other RAX users can see it. Everything is checked before anything is
+ * The upload half of the shared market database (docs/COMMUNITY-MARKET.md): a browser that has just imported a Real market
+ * capture sends the same capture here, anonymously, so other RAX users can see it. Everything is checked before anything is
  * written (size, shape, plausibility, rate limits, a daily write budget), the write is a few set-based D1 statements, and the
  * answer says exactly what happened to every row. Failures here never affect the contributor's own local import.
  */

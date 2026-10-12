@@ -1,12 +1,12 @@
-# Community market database (opt-in, free)
+# Community market database (always-on, anonymous, free)
 
-A shared, **opt-in** store for the Real-marketplace captures described in [MARKET-DATA-SOURCES.md](MARKET-DATA-SOURCES.md#real-marketplace-capture-tabs-23-the-default-when-you-have-captured-something). When someone ticks **"Share this capture anonymously with everyone using RAX"** while importing, the same capture is saved to a Cloudflare D1 database and every other RAX user can select **Community (shared by RAX users)** in Tabs 2–3. It costs nothing: Cloudflare D1 free tier, no card.
+A shared store for the Real-marketplace captures described in [MARKET-DATA-SOURCES.md](MARKET-DATA-SOURCES.md#real-marketplace-capture-tabs-23-the-default-when-you-have-captured-something). Every time someone imports a capture (there is no setting; the import panel says so next to the button), the same capture is saved to a Cloudflare D1 database and every other RAX user can select **Community (shared by RAX users)** in Tabs 2–3. It costs nothing: Cloudflare D1 free tier, no card.
 
-Everything about it is an option. With sharing off (the default) and the community database empty or not connected, the app behaves exactly as before; local captures remain first in the default-source order.
+Sharing itself is not optional, but nothing else depends on it. With the community database empty or not connected, the app behaves exactly as before; local captures remain first in the default-source order.
 
 ## Terms-of-service caveat (please read)
 
-Real's Terms of Use discourage bulk data mining and redistributing other people's data. This feature does **not** make that go away. The recorder only reads what a signed-in user personally has on screen, at human speed, and sharing is something each user chooses per import; but a pooled database of what many users looked at is still a redistributed dataset, and **it is the person who ticks the box who is sharing it**. Share only what you personally looked at and only if you are comfortable with that. The site operator can wipe the database at any time (below). Nothing here is Real's own feed, and nothing in it is verified against Real.
+Real's Terms of Use discourage bulk data mining and redistributing other people's data. This feature does **not** make that go away. The recorder only reads what a signed-in user personally has on screen, at human speed, but a pooled database of what many users looked at is still a redistributed dataset, and since sharing is automatic on import, **the operator, not just the importer, is responsible for it**. The import panel tells users plainly that importing shares, so nobody shares by surprise. The site operator can wipe the database at any time (below). Nothing here is Real's own feed, and nothing in it is verified against Real.
 
 ## Architecture
 
@@ -78,7 +78,7 @@ Inside the contribute path, at most once an hour (a lease row in `meta` claimed 
 
 ## Privacy: what is and isn't stored
 
-Stored: the rows the contributor chose to export (cards, prices, timestamps, bids, Real's market stats); a **contributor hash** = `SHA-256(constant pepper + random 128-bit id)` (the id is generated once in the contributor's browser, `localStorage` key `rax_community_id_v1`); and `net`, **20 bits** of a salted hash of the network address (about 4,000 addresses share each value), used only so one network can't vote twice.
+Stored: the rows in the export the contributor imported (cards, prices, timestamps, bids, Real's market stats); a **contributor hash** = `SHA-256(constant pepper + random 128-bit id)` (the id is generated once in the contributor's browser, `localStorage` key `rax_community_id_v1`); and `net`, **20 bits** of a salted hash of the network address (about 4,000 addresses share each value), used only so one network can't vote twice.
 
 Never stored: IP addresses, usernames, Real accounts, user agents, cookies, anything from the capture beyond what is listed (the capture format has no personal data: bidders are not on Real's cards). The rate limiter keys are hashes that include the hour. A unit test dumps every table and asserts no IP and no raw contributor id appears. Honest limits: the contributor hash is a stable pseudonym (all your contributions link to each other); rows can't be withdrawn individually (they expire; the operator can delete); the pepper is in the repo, so the hash protects a *random* id, not a guessable one.
 
@@ -104,7 +104,7 @@ Weaknesses: (a) an attacker with several networks (VPN, botnet, phone + home) ca
 
 ## In the app
 
-- **Import** (`RealCaptureImport`): checkbox, default OFF, remembered; plain-language explanation and the ToS caveat next to it. When ticked, after a successful local import the same capture is POSTed and the result shown ("20 new rows shared · 0 already known"). A failure never blocks the local import.
+- **Import** (`RealCaptureImport`): no checkbox; a plain-language notice that importing shares anonymously. After a successful local import the same capture is POSTed and the result shown ("20 new rows shared · 0 already known"). A failure never blocks the local import.
 - **Source "Community (shared by RAX users)"** in Tabs 2 and 3 (and the assistant's `source` parameter, value `community`). Default order: your own capture; else Community when it has (verified) data; else the previous order. Every badge reads "Community database · N reporters · updated <age>". Options: **Verified only** (default ON) and **include my local capture** (de-duplicated by sale key / auction key / market-view key; default ON when you have one).
 - **"Community data" line** in both tabs: rows, reporters, last update, "How to contribute" (opens the capture panel).
 
