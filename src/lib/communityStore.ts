@@ -136,7 +136,7 @@ export function refreshData(force = false): Promise<void> {
   if (!force && state.data && Date.now() - state.data.fetchedAt < FRESH_MS) return Promise.resolve();
   set({ dataLoading: true });
   dataInflight = (async () => {
-    const since = new Date(Date.now() - 120 * DAY).toISOString();
+    const since = new Date(Date.now() - 365 * DAY).toISOString();
     const q = (kind: string) => `/api/market/community?kind=${kind}&since=${encodeURIComponent(since)}`;
     const [sales, auctions, stats] = await Promise.all([
       getJsonQuiet<{ rows: CommunitySale[]; truncated: boolean }>(q('sales')),
@@ -161,20 +161,47 @@ export interface ShareResult {
   /** One sentence for the UI: "20 new rows shared · 0 already known". */
   message: string;
   counts?: { new: number; known: number; dropped: number };
+  /** Server receipt time of the last accepted request (ISO). Every stored row carries this time. */
+  receivedAt?: string;
 }
 
-/** POST a capture the user has just imported. Never throws: a failure is a message, and the local import is already safe. */
+/** Rows per request. The server bounds a single request (Worker CPU / D1 statement size), not a contributor: bigger captures go up as several. */
+export const CHUNK = { auctions: 400, sales: 500, stats: 100 } as const;
+
+/** Split a capture into request-sized pieces (same export time on each). Exported for tests. */
+export function chunkCapture(capture: RealMarketCapture): RealMarketCapture[] {
+  const n = Math.max(1, Math.ceil(capture.auctions.length / CHUNK.auctions), Math.ceil(capture.sales.length / CHUNK.sales), Math.ceil(capture.stats.length / CHUNK.stats));
+  const slice = <T,>(xs: T[], size: number, i: number) => xs.slice(i * size, (i + 1) * size);
+  return Array.from({ length: n }, (_, i) => ({ ...capture, auctions: slice(capture.auctions, CHUNK.auctions, i), sales: slice(capture.sales, CHUNK.sales, i), stats: slice(capture.stats, CHUNK.stats, i) }));
+}
+
+/** POST a capture the user has just imported, in as many requests as it takes. Never throws: a failure is a message, and the local import is already safe. */
 export async function shareCapture(capture: RealMarketCapture): Promise<ShareResult> {
-  try {
-    const r = await fetch('/api/market/contribute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ capture, contributor: contributorId() }) });
-    const b = await r.json().catch(() => null);
-    if (!r.ok || !b?.ok) return { ok: false, message: `Not shared — ${typeof b?.message === 'string' ? b.message : `the community database answered ${r.status}`}` };
-    const sum = (c: Record<string, number> | undefined) => (c ? (c.auctions ?? 0) + (c.sales ?? 0) + (c.stats ?? 0) : 0);
-    void refreshSummary(true);
-    return { ok: true, message: String(b.message), counts: { new: sum(b.new), known: sum(b.duplicates), dropped: sum(b.dropped) } };
-  } catch {
-    return { ok: false, message: 'Not shared — could not reach the community database (your local import is unaffected).' };
+  const parts = chunkCapture(capture);
+  const tot = { new: 0, known: 0, dropped: 0 };
+  let done = 0;
+  let receivedAt: string | undefined;
+  const sum = (c: Record<string, number> | undefined) => (c ? (c.auctions ?? 0) + (c.sales ?? 0) + (c.stats ?? 0) : 0);
+  for (const part of parts) {
+    try {
+      const r = await fetch('/api/market/contribute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ capture: part, contributor: contributorId() }) });
+      const b = await r.json().catch(() => null);
+      if (!r.ok || !b?.ok) {
+        const why = typeof b?.message === 'string' ? b.message : `the community database answered ${r.status}`;
+        return { ok: false, message: done ? `Shared ${done} of ${parts.length} parts (${tot.new} new rows), then stopped — ${why}` : `Not shared — ${why}`, counts: tot, receivedAt };
+      }
+      tot.new += sum(b.new);
+      tot.known += sum(b.duplicates);
+      tot.dropped += sum(b.dropped);
+      receivedAt = typeof b.receivedAt === 'string' ? b.receivedAt : receivedAt;
+      done++;
+    } catch {
+      return { ok: false, message: done ? `Shared ${done} of ${parts.length} parts, then lost the connection (your local import is unaffected).` : 'Not shared — could not reach the community database (your local import is unaffected).', counts: tot, receivedAt };
+    }
   }
+  void refreshSummary(true);
+  const when = receivedAt ? ` · timestamped ${new Date(receivedAt).toLocaleString()}` : '';
+  return { ok: true, message: `${tot.new} new row${tot.new === 1 ? '' : 's'} shared · ${tot.known} already known${tot.dropped ? ` · ${tot.dropped} dropped as implausible` : ''}${parts.length > 1 ? ` · sent in ${parts.length} parts` : ''}${when}`, counts: tot, receivedAt };
 }
 
 /** Forget cached rows (tests). */

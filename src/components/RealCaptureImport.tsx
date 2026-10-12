@@ -88,7 +88,7 @@ export default function RealCaptureImport({ defaultOpen = false }: { defaultOpen
               <p className="text-muted">Community sharing isn’t available on this deployment (no community database is connected), so this import stays in your browser.</p>
             ) : (
               <p className="text-muted">
-                Each import also sends <b className="text-head">only the auctions, sales and market stats in this export</b> to RAX’s shared database, so other users get them as the “Community” data source. No username, account or IP address is stored — just a random id made in this browser, kept only as a salted hash so independent reporters can be counted. Shared rows can’t be edited or taken back individually (they expire on their own: sales after 120 days, auctions 14 days after last seen). Don’t import anything you aren’t comfortable sharing.
+                Each import also sends (in as many parts as it takes — there is no size limit) <b className="text-head">only the auctions, sales and market stats in this export</b> to RAX’s shared database, so other users get them as the “Community” data source. No username, account or IP address is stored — just a random id made in this browser, kept only as a salted hash so independent reporters can be counted. Shared rows can’t be edited or taken back individually (they are kept permanently, each with the time it was received). Don’t import anything you aren’t comfortable sharing.
               </p>
             )}
           </div>

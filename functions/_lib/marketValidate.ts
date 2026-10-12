@@ -9,17 +9,19 @@
 import { abbrevKey, normName, normSport, normType } from '../../shared/realMarket';
 
 export const LIMITS = {
-  /** Request body, bytes. A full export of 400 auctions + 500 sales + 100 stats is ~250 KB. */
+  /** Per-REQUEST ceilings (Worker CPU / D1 statement size), not per contributor: the browser splits a bigger capture into several
+   *  requests of at most this size (src/lib/communityStore.ts CHUNK), so a contributor can share any number of rows. A full chunk of
+   *  400 auctions + 500 sales + 100 stats is ~250 KB. */
   bodyBytes: 300 * 1024,
   auctions: 400,
   sales: 500,
   stats: 100,
   rating: [0.1, 12] as const,
   price: [0, 5_000_000] as const,
-  saleMaxAgeDays: 120,
-  /** Live auctions / stats must have been SEEN recently — a capture is a snapshot, not an archive. */
-  auctionMaxAgeDays: 7,
-  statMaxAgeDays: 7,
+  /** History is kept, so old rows are accepted (10 years = "not absurd"); every row keeps its own timestamp. */
+  saleMaxAgeDays: 3650,
+  auctionMaxAgeDays: 3650,
+  statMaxAgeDays: 3650,
   /** Clock skew allowed between the contributor's machine and ours. */
   skewMs: 5 * 60_000,
   timeLeftMaxSec: 60 * 86_400,
@@ -94,6 +96,8 @@ export interface Cleaned {
   sales: CleanSale[];
   stats: CleanStat[];
   dropped: Counts & { reasons: Record<string, number> };
+  /** The capture's own export time (the exporter's clock), epoch ms, when valid. */
+  capturedAt: number | null;
 }
 
 export class Rejected extends Error {
@@ -289,7 +293,7 @@ export function cleanCapture(capture: unknown, now: number): Cleaned {
     const a = capture[k];
     if (a == null) return [];
     if (!Array.isArray(a)) throw new Rejected(400, 'bad_capture', `capture.${k} must be an array.`);
-    if (a.length > max) throw new Rejected(413, 'too_many_rows', `At most ${max} ${k} per contribution (this one has ${a.length}). Share smaller captures.`);
+    if (a.length > max) throw new Rejected(413, 'too_many_rows', `At most ${max} ${k} per request (this one has ${a.length}); the app splits larger captures automatically.`);
     return a;
   };
   const rawAuctions = arr('auctions', LIMITS.auctions);
@@ -316,7 +320,7 @@ export function cleanCapture(capture: unknown, now: number): Cleaned {
     const s = cleanStat(x, now, fb, d);
     if (s && !stats.has(s.key)) stats.set(s.key, s);
   }
-  const out: Cleaned = { auctions: [...auctions.values()], sales: [...sales.values()], stats: [...stats.values()], dropped: { ...d.counts, reasons: d.reasons } };
+  const out: Cleaned = { auctions: [...auctions.values()], sales: [...sales.values()], stats: [...stats.values()], dropped: { ...d.counts, reasons: d.reasons }, capturedAt: fb };
   annotateSales(out.sales, out.auctions);
   return out;
 }

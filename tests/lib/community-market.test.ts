@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { combineStores, communityCounts, communityLabel, communityLine, communityToStore, type CommunityData, type CommunitySummary } from '../../shared/communityMarket';
 import { emptyStore, mergeCapture, radarItems } from '../../shared/realMarket';
 import { parseRealCapture } from '../../shared/realMarketCapture';
-import { COMBINE_KEY, ID_KEY, VERIFIED_KEY, contributorId, getCombine, getVerifiedOnly } from '../../src/lib/communityStore';
+import { CHUNK, COMBINE_KEY, ID_KEY, VERIFIED_KEY, chunkCapture, contributorId, getCombine, getVerifiedOnly } from '../../src/lib/communityStore';
 
 const NOW = Date.parse('2026-10-11T18:00:00Z');
 const cap = parseRealCapture(fs.readFileSync('tests/fixtures/real/capture_sample.json', 'utf8')).capture!;
@@ -106,4 +106,18 @@ describe('settings and identity', () => {
     expect(s.m.get(ID_KEY)).toBe(a);
     expect(contributorId(mem())).not.toBe(a);
   });
+});
+
+describe('chunked upload', () => {
+  const mk = (a: number, s: number, t: number) => ({ v: 1 as const, kind: 'real-market' as const, at: '2026-10-11T10:00:00.000Z', auctions: Array.from({ length: a }, (_, i) => ({ i }) as any), sales: Array.from({ length: s }, (_, i) => ({ i }) as any), stats: Array.from({ length: t }, (_, i) => ({ i }) as any) });
+  it('an under-limit capture is one request; a big one is split, nothing lost or duplicated', () => {
+    expect(chunkCapture(mk(9, 10, 1))).toHaveLength(1);
+    const big = mk(CHUNK.auctions * 3 + 1, 12, 0);
+    const parts = chunkCapture(big);
+    expect(parts).toHaveLength(4);
+    expect(parts.every((p) => p.auctions.length <= CHUNK.auctions && p.sales.length <= CHUNK.sales && p.stats.length <= CHUNK.stats && p.at === big.at)).toBe(true);
+    expect(parts.flatMap((p) => p.auctions)).toEqual(big.auctions);
+    expect(parts.flatMap((p) => p.sales)).toEqual(big.sales);
+  });
+  it('an empty capture is still one (empty) request', () => expect(chunkCapture(mk(0, 0, 0))).toHaveLength(1));
 });

@@ -15,26 +15,17 @@ import { zero } from './marketValidate';
 /* ------------------------------- budgets & limits ------------------------------- */
 
 export const BUDGET = {
-  /** Estimated row writes (tables + index entries) we allow ourselves per UTC day — 70% of D1's 100,000 so pruning, retries and
-   *  the estimate being a little low can never reach the real quota. */
+  /** Estimated row writes (tables + index entries) we allow ourselves per UTC day — 70% of D1's 100,000 so retries and
+   *  the estimate being a little low can never reach the real quota. This is the free tier, not a policy: it is the one limit left. */
   dailyWrites: 70_000,
-  /** Total rows in sales + auctions + stats. Storage is nowhere near the limit at this size (~100 MB of 5 GB); the cap exists to
-   *  bound what any scan, export or prune has to read. */
-  maxRows: 300_000,
-  salesCap: 150_000,
-  auctionsCap: 30_000,
-  statsCap: 30_000,
-  /** Contributions per hour per contributor id and per network bucket. */
-  perHour: 12,
-  salesKeepDays: 120,
-  /** Ended auctions are kept this long after their LAST sighting. */
-  auctionsKeepDays: 14,
-  statsKeepDays: 60,
-  contributorsKeepDays: 180,
-  /** Bid-change points kept per auction. */
-  maxPoints: 24,
-  /** Rows deleted per table per prune run (each deleted row is a write too). */
-  pruneBatch: 2_000,
+  /** Safety ceiling on sales + auctions + stats rows (≈ 400 MB of D1's 500 MB per-database limit). Nothing is ever deleted to
+   *  make room: past it new contributions are refused until the operator raises it or moves to a paid plan. */
+  maxRows: 900_000,
+  /** Contributions (requests) per hour per contributor id and per network bucket. A big capture is several requests. */
+  perHour: 120,
+  /** Bid-change points kept per auction (full bid history; each point is one row write). */
+  maxPoints: 500,
+  /** Housekeeping only — never sales / auctions / stats. */
   pruneEveryMs: 60 * 60_000,
   recountEveryMs: 6 * 60 * 60_000,
 } as const;
@@ -202,7 +193,7 @@ export function gate(reads: Reads, estimatedWrites: number, now: number): Gate {
     return { ok: false, status: 503, code: 'daily_budget', message: 'The community database has used its free daily write budget. Your local import is unaffected — contribute again after 00:00 UTC.', retryAfter: Math.ceil((DAY - (now % DAY)) / 1000) };
   }
   if (reads.meta.rows > BUDGET.maxRows) {
-    return { ok: false, status: 503, code: 'row_cap', message: 'The community database is full until old rows are pruned (hourly). Try again later.', retryAfter: 3600 };
+    return { ok: false, status: 503, code: 'row_cap', message: 'The community database has reached its storage ceiling; nothing is deleted to make room. Your local import is unaffected.', retryAfter: 86_400 };
   }
   return { ok: true };
 }
@@ -252,7 +243,7 @@ export function plan(db: D1Database, c: Cleaned, id: Identity, reads: Reads, now
     }
     const needReport = [...fresh.map((s) => s.key), ...corroborate];
     if (needReport.length) {
-      st.push(p('INSERT OR IGNORE INTO sale_reports (sale_key, contributor_hash, net) SELECT value, ?2, ?3 FROM json_each(?1)', json(needReport), id.hash, id.net));
+      st.push(p('INSERT OR IGNORE INTO sale_reports (sale_key, contributor_hash, net, reported_at) SELECT value, ?2, ?3, ?4 FROM json_each(?1)', json(needReport), id.hash, id.net, now));
       writes += needReport.length;
     }
     if (corroborate.length) {
@@ -306,7 +297,7 @@ export function plan(db: D1Database, c: Cleaned, id: Identity, reads: Reads, now
       writes += fresh.length * 2;
     }
     if (needReport.length) {
-      st.push(p('INSERT OR IGNORE INTO auction_reports (auction_key, contributor_hash, net) SELECT value, ?2, ?3 FROM json_each(?1)', json(needReport), id.hash, id.net));
+      st.push(p('INSERT OR IGNORE INTO auction_reports (auction_key, contributor_hash, net, reported_at) SELECT value, ?2, ?3, ?4 FROM json_each(?1)', json(needReport), id.hash, id.net, now));
       writes += needReport.length;
     }
     if (points.length) {
@@ -372,7 +363,7 @@ export function plan(db: D1Database, c: Cleaned, id: Identity, reads: Reads, now
     }
     const needReport = [...fresh.map((s) => s.key), ...corroborate];
     if (needReport.length) {
-      st.push(p('INSERT OR IGNORE INTO stat_reports (stat_key, contributor_hash, net) SELECT value, ?2, ?3 FROM json_each(?1)', json(needReport), id.hash, id.net));
+      st.push(p('INSERT OR IGNORE INTO stat_reports (stat_key, contributor_hash, net, reported_at) SELECT value, ?2, ?3, ?4 FROM json_each(?1)', json(needReport), id.hash, id.net, now));
       writes += needReport.length;
     }
     if (corroborate.length) {
@@ -382,12 +373,13 @@ export function plan(db: D1Database, c: Cleaned, id: Identity, reads: Reads, now
   }
 
   /* ---- bookkeeping: contributor, rate-limit counters, meta (~10 rows) ---- */
-  const fixed = 11 + (result.newlyVerified.sales ? 1 : 0) + (result.newlyVerified.auctions ? 1 : 0) + (result.newlyVerified.stats ? 1 : 0);
+  const fixed = 12 + (result.newlyVerified.sales ? 1 : 0) + (result.newlyVerified.auctions ? 1 : 0) + (result.newlyVerified.stats ? 1 : 0);
   const total = writes + fixed;
   result.estimatedWrites = total;
   const add = (k: string, n: number) => p("INSERT INTO meta (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = CAST(CAST(v AS INTEGER) + CAST(excluded.v AS INTEGER) AS TEXT)", k, String(n));
   st.push(
     p('INSERT INTO contributors (contributor_hash, first_seen, last_seen, contributions) VALUES (?1, ?2, ?2, 1) ON CONFLICT(contributor_hash) DO UPDATE SET last_seen = ?2, contributions = contributions + 1', id.hash, now),
+    p('INSERT INTO contributions (received_at, captured_at, contributor_hash, auctions, sales, stats, new_rows) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)', now, c.capturedAt, id.hash, c.auctions.length, c.sales.length, c.stats.length, result.new.auctions + result.new.sales + result.new.stats),
     p('INSERT INTO rate_limits (bucket, n, expires) VALUES (?1, 1, ?2) ON CONFLICT(bucket) DO UPDATE SET n = n + 1', id.buckets.contributor, now + 2 * HOUR),
     p('INSERT INTO rate_limits (bucket, n, expires) VALUES (?1, 1, ?2) ON CONFLICT(bucket) DO UPDATE SET n = n + 1', id.buckets.network, now + 2 * HOUR),
     add(`writes:${dayKey(now)}`, total),
@@ -416,9 +408,10 @@ export interface PruneReport {
 }
 
 /**
- * Retention and caps. Runs at most once an hour (a meta row is the lease, claimed with a conditional UPDATE so two requests
- * can't both prune) from inside the contribute path; `force` is for the row-cap guard. Deletes are bounded per run because every
- * deleted row is a write too. Exact row counts are re-read only every 6 h (COUNT(*) reads every row).
+ * Housekeeping. Runs at most once an hour (a meta row is the lease, claimed with a conditional UPDATE so two requests can't both
+ * run it) from inside the contribute path. It NEVER deletes sales, auctions, stats, bid points or their reports: all history is
+ * kept. It only drops expired rate-limit counters and old per-day write counters, and refreshes exact row counts (re-read only
+ * every 6 h, because COUNT(*) reads every row).
  */
 export async function prune(db: D1Database, now: number, force = false): Promise<PruneReport> {
   const out: PruneReport = { ran: false, sales: 0, auctions: 0, stats: 0, recounted: false };
@@ -429,44 +422,10 @@ export async function prune(db: D1Database, now: number, force = false): Promise
     await db.prepare("UPDATE meta SET v = ?1 WHERE k = 'last_prune'").bind(String(now)).run();
   }
   out.ran = true;
-  const B = BUDGET.pruneBatch;
   const q = (sql: string, ...p: unknown[]) => db.prepare(sql).bind(...p);
-  const [ns, na, nt] = ['n_sales', 'n_auctions', 'n_stats'];
-  const counts = await db.prepare("SELECT k, v FROM meta WHERE k IN ('n_sales','n_auctions','n_stats','last_recount')").all<Row>();
+  const counts = await db.prepare("SELECT k, v FROM meta WHERE k IN ('last_recount')").all<Row>();
   const m = new Map((counts.results ?? []).map((r) => [String(r.k), Number(r.v) || 0]));
-
-  const over = (n: number, cap: number) => Math.min(B, Math.max(0, n - cap));
-  const sel = await db.batch<Row>([
-    q('SELECT sale_key AS k FROM sales WHERE at < ?1 LIMIT ?2', now - BUDGET.salesKeepDays * DAY, B),
-    q('SELECT auction_key AS k FROM auctions WHERE last_seen < ?1 LIMIT ?2', now - BUDGET.auctionsKeepDays * DAY, B),
-    q('SELECT stat_key AS k FROM stats WHERE seen_at < ?1 LIMIT ?2', now - BUDGET.statsKeepDays * DAY, B),
-    q('SELECT sale_key AS k FROM sales ORDER BY at LIMIT ?1', over(m.get(ns) ?? 0, BUDGET.salesCap)),
-    q('SELECT auction_key AS k FROM auctions ORDER BY last_seen LIMIT ?1', over(m.get(na) ?? 0, BUDGET.auctionsCap)),
-    q('SELECT stat_key AS k FROM stats ORDER BY seen_at LIMIT ?1', over(m.get(nt) ?? 0, BUDGET.statsCap)),
-  ]);
-  const keys = (a: number, b: number) => [...new Set([...(sel[a].results ?? []), ...(sel[b].results ?? [])].map((r) => String(r.k)))];
-  const sk = keys(0, 3);
-  const ak = keys(1, 4);
-  const tk = keys(2, 5);
-  out.sales = sk.length;
-  out.auctions = ak.length;
-  out.stats = tk.length;
-
-  const del: Stmt[] = [];
-  const byKeys = (table: string, col: string, ks: string[]) => del.push(q(`DELETE FROM ${table} WHERE ${col} IN (SELECT value FROM json_each(?1))`, json(ks)));
-  if (sk.length) (byKeys('sale_reports', 'sale_key', sk), byKeys('sales', 'sale_key', sk));
-  if (ak.length) (byKeys('auction_points', 'auction_key', ak), byKeys('auction_reports', 'auction_key', ak), byKeys('auctions', 'auction_key', ak));
-  if (tk.length) (byKeys('stat_reports', 'stat_key', tk), byKeys('stats', 'stat_key', tk));
-  const add = (k: string, n: number) => q("INSERT INTO meta (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = CAST(MAX(0, CAST(v AS INTEGER) + CAST(excluded.v AS INTEGER)) AS TEXT)", k, String(n));
-  if (sk.length) del.push(add(ns, -sk.length));
-  if (ak.length) del.push(add(na, -ak.length));
-  if (tk.length) del.push(add(nt, -tk.length));
-  del.push(
-    q('DELETE FROM rate_limits WHERE expires < ?1', now),
-    q('DELETE FROM contributors WHERE last_seen < ?1', now - BUDGET.contributorsKeepDays * DAY),
-    q("DELETE FROM meta WHERE k LIKE 'writes:%' AND k < ?1", `writes:${dayKey(now - 3 * DAY)}`),
-  );
-  await db.batch(del);
+  await db.batch([q('DELETE FROM rate_limits WHERE expires < ?1', now), q("DELETE FROM meta WHERE k LIKE 'writes:%' AND k < ?1", `writes:${dayKey(now - 3 * DAY)}`)]);
 
   if (force || now - (m.get('last_recount') ?? 0) >= BUDGET.recountEveryMs) {
     await recount(db, now);

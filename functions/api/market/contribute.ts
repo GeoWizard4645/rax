@@ -44,18 +44,13 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
       throw new Rejected(422, 'nothing_valid', `No row in that capture passed validation${why.length ? ` (${why.map(([k, n]) => `${k} ×${n}`).join(', ')})` : ' (it was empty)'}.`);
     }
 
-    let reads = await readState(db, clean, id, now);
-    let g = gate(reads, estimate(db, clean, id, reads, now), now);
-    if (!g.ok && g.code === 'row_cap') {
-      await prune(db, now, true); // over the row cap: make room now rather than wait for the hourly pass
-      reads = await readState(db, clean, id, now);
-      g = gate(reads, estimate(db, clean, id, reads, now), now);
-    }
+    const reads = await readState(db, clean, id, now);
+    const g = gate(reads, estimate(db, clean, id, reads, now), now);
     if (!g.ok) return err(g.status!, g.code!, g.message!, { retryAfter: g.retryAfter });
 
     const p = plan(db, clean, id, reads, now);
     await db.batch(p.statements);
-    waitUntil(prune(db, now).catch(() => undefined)); // retention + caps, at most hourly
+    waitUntil(prune(db, now).catch(() => undefined)); // housekeeping only (rate-limit counters, row counts), at most hourly
 
     const r = p.result;
     const sum = (c: { auctions: number; sales: number; stats: number }) => c.auctions + c.sales + c.stats;
@@ -70,6 +65,9 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
         alreadyYours: r.alreadyYours,
         dropped: r.dropped,
         estimatedWrites: r.estimatedWrites,
+        /** Server receipt time of this contribution; every stored row carries it (first_seen / last_seen / reported_at). */
+        receivedAt: new Date(now).toISOString(),
+        capturedAt: clean.capturedAt == null ? null : new Date(clean.capturedAt).toISOString(),
         message: `${sum(r.new)} new row${sum(r.new) === 1 ? '' : 's'} shared · ${sum(r.duplicates)} already known${sum(r.corroborated) ? ` (${sum(r.corroborated)} now corroborated by you)` : ''}${dropped ? ` · ${dropped} dropped as implausible` : ''}`,
       },
       200,

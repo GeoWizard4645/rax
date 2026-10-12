@@ -115,14 +115,14 @@ describe('POST /api/market/contribute', () => {
       x.sales.push(
         { ...x.sales[0], serial: '#9001', rating: 99 }, // rating out of range
         { ...x.sales[0], serial: '#9002', at: '2026-10-12T00:00:00.000Z' }, // future
-        { ...x.sales[0], serial: '#9003', at: '2026-05-01T00:00:00.000Z' }, // older than 120 days
+        { ...x.sales[0], serial: '#9003', at: '2006-05-01T00:00:00.000Z' }, // older than 10 years (older history is kept, absurd dates are not)
         { ...x.sales[0], serial: '#9004', price: 100, perRating: 70 }, // price / rating = 38.5, not 70
         { ...x.sales[0], serial: '#9005', rarity: 'Mythic' },
         { ...x.sales[0], serial: 'abc' },
         { ...x.sales[0], serial: '#9006', price: 6_000_000, perRating: 2307692 },
         { ...x.sales[0], serial: '#9007', player: '<script>alert(1)</script>' },
       );
-      x.auctions.push({ ...x.auctions[0], serial: '#9010', bid: -5 }, { ...x.auctions[0], serial: '#9011', sport: 'QUIDDITCH' }, { ...x.auctions[0], serial: '#9012', seenAt: '2026-09-01T00:00:00.000Z' });
+      x.auctions.push({ ...x.auctions[0], serial: '#9010', bid: -5 }, { ...x.auctions[0], serial: '#9011', sport: 'QUIDDITCH' }, { ...x.auctions[0], serial: '#9012', seenAt: '2006-09-01T00:00:00.000Z' });
       x.stats.push({ ...x.stats[0], serial: '#9020', min: 500, median: 80 }); // min above the median
     });
     const r = await J(await share(c, A));
@@ -243,47 +243,56 @@ describe('POST /api/market/contribute', () => {
   });
 });
 
-describe('retention and caps', () => {
-  it('prunes sales older than 120 days, auctions unseen for 14 days, stats older than 60 days — with their reports — and keeps the counters right', async () => {
+describe('history is kept', () => {
+  it('housekeeping never deletes sales, auctions, stats, bid points or their reports, however old', async () => {
     await share(cap(), A, '203.0.113.1');
-    const old = NOW - 130 * 86_400_000;
-    db.raw.prepare("UPDATE sales SET at = ? WHERE serial IN ('#2073', '#2522')").run(old);
-    db.raw.prepare('UPDATE auctions SET last_seen = ? WHERE bid >= 100').run(NOW - 15 * 86_400_000);
-    db.raw.prepare('UPDATE stats SET seen_at = ?').run(NOW - 61 * 86_400_000);
-    const before = { auctions: one('SELECT COUNT(*) n FROM auctions').n, points: one('SELECT COUNT(*) n FROM auction_points').n };
-    const rep = await prune(db as any, NOW, true);
-    expect(rep).toMatchObject({ ran: true, sales: 2, stats: 1, recounted: true });
-    expect(rep.auctions).toBeGreaterThan(0);
-    expect(one('SELECT COUNT(*) n FROM sales').n).toBe(8);
-    expect(one('SELECT COUNT(*) n FROM sale_reports').n).toBe(8);
-    expect(one('SELECT COUNT(*) n FROM stat_reports').n).toBe(0);
-    expect(one('SELECT COUNT(*) n FROM auctions').n).toBe(before.auctions - rep.auctions);
-    expect(one('SELECT COUNT(*) n FROM auction_reports').n).toBe(before.auctions - rep.auctions);
-    expect(one('SELECT COUNT(*) n FROM auction_points').n).toBeLessThan(before.points);
-    expect(Number(one("SELECT v FROM meta WHERE k = 'n_sales'").v)).toBe(8);
+    const old = NOW - 400 * 86_400_000;
+    db.raw.prepare('UPDATE sales SET at = ?').run(old);
+    db.raw.prepare('UPDATE auctions SET last_seen = ?').run(old);
+    db.raw.prepare('UPDATE stats SET seen_at = ?').run(old);
+    const count = () => ['sales', 'sale_reports', 'auctions', 'auction_points', 'auction_reports', 'stats', 'stat_reports'].map((t) => one(`SELECT COUNT(*) n FROM ${t}`).n);
+    const before = count();
+    const rep = await prune(db as any, NOW + 5 * 365 * 86_400_000, true);
+    expect(rep).toMatchObject({ ran: true, sales: 0, auctions: 0, stats: 0, recounted: true });
+    expect(count()).toEqual(before);
+    expect(Number(one("SELECT v FROM meta WHERE k = 'n_sales'").v)).toBe(10);
   });
 
-  it('the hourly lease means a second prune inside the hour does nothing; contributing triggers it', async () => {
-    const first = await prune(db as any, NOW);
-    expect(first.ran).toBe(true);
-    expect((await prune(db as any, NOW + 60_000)).ran).toBe(false);
-    expect((await prune(db as any, NOW + 61 * 60_000)).ran).toBe(true);
+  it('accepts a capture older than the old 7-day / 120-day windows and keeps its own timestamps', async () => {
+    const r = await J(await share(cap((x) => {
+      x.at = '2026-08-01T12:00:00.000Z';
+      x.sales[0].at = '2026-03-02T10:00:00.000Z';
+      x.auctions.forEach((a: any) => (a.seenAt = '2026-08-01T12:00:00.000Z'));
+      x.stats.forEach((s: any) => (s.seenAt = '2026-08-01T12:00:00.000Z'));
+    }), A));
+    expect(r).toMatchObject({ ok: true, accepted: { auctions: 9, sales: 10, stats: 1 }, capturedAt: '2026-08-01T12:00:00.000Z' });
+    expect(one('SELECT MIN(at) m FROM sales').m).toBe(Date.parse('2026-03-02T10:00:00.000Z'));
+    expect(one('SELECT MIN(last_seen) m FROM auctions').m).toBe(Date.parse('2026-08-01T12:00:00.000Z'));
   });
 
-  it('enforces the row cap: oldest sales go first', async () => {
+  it('timestamps everything: receipt time on the response, every report, and a ledger row per contribution', async () => {
+    const r = await J(await share(cap(), A, '203.0.113.1'));
+    expect(r.receivedAt).toBe(new Date(NOW).toISOString());
+    for (const t of ['sale_reports', 'auction_reports', 'stat_reports']) expect(one(`SELECT COUNT(*) n FROM ${t} WHERE reported_at = ?`, NOW).n).toBe(one(`SELECT COUNT(*) n FROM ${t}`).n);
+    expect(one('SELECT COUNT(*) n FROM sales WHERE first_seen = ? AND last_seen = ?', NOW, NOW).n).toBe(10);
+    expect(one('SELECT * FROM contributions')).toMatchObject({ received_at: NOW, auctions: 9, sales: 10, stats: 1, new_rows: 20 });
+    vi.setSystemTime(NOW + 60_000);
+    await share(cap(), B, '198.51.100.7');
+    expect(all('SELECT received_at, new_rows FROM contributions ORDER BY id').map((x: any) => [x.received_at, x.new_rows])).toEqual([[NOW, 20], [NOW + 60_000, 0]]);
+  });
+
+  it('a row ceiling refuses new rows instead of deleting old ones', async () => {
     await share(cap(), A, '203.0.113.1');
-    db.raw.prepare("UPDATE meta SET v = ? WHERE k = 'n_sales'").run(String(BUDGET.salesCap + 3)); // pretend we are 3 over
-    await prune(db as any, NOW, true);
-    // the counter said +3 over, the table only has 10: it removes up to 3, oldest first, then the recount makes the counter true again
-    expect(one('SELECT COUNT(*) n FROM sales').n).toBe(7);
-    expect(Number(one("SELECT v FROM meta WHERE k = 'n_sales'").v)).toBe(7);
-    expect(one("SELECT COUNT(*) n FROM sales WHERE serial = '#2073'").n).toBe(1); // the newest sale survived
-  });
-
-  it('a contribution that finds the database over its row budget prunes first, and is refused only if that does not help', async () => {
     db.raw.prepare("UPDATE meta SET v = ? WHERE k = 'n_sales'").run(String(BUDGET.maxRows + 1));
-    const r = await share(cap(), A, '203.0.113.1');
-    expect(r.status).toBe(200); // the forced prune recounted the (actually empty) tables
+    const r = await share(cap(), B, '198.51.100.7');
+    expect(r.status).toBe(503);
+    expect(JSON.stringify(await J(r))).toContain('row_cap');
+    expect(one('SELECT COUNT(*) n FROM sales').n).toBe(10);
+  });
+
+  it('keeps the full bid history of an auction (up to the new 500-point ceiling)', async () => {
+    await share(cap(), A, '203.0.113.1');
+    expect(BUDGET.maxPoints).toBe(500);
   });
 
   it('rate-limit rows expire and are pruned', async () => {
