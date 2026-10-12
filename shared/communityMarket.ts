@@ -1,5 +1,5 @@
 /**
- * Community market data (the opt-in shared database, docs/COMMUNITY-MARKET.md) as the SAME structures the local Real capture uses
+ * Community market data (the shared database, docs/COMMUNITY-MARKET.md) as the SAME structures the local Real capture uses
  * (shared/realMarket.ts), so Tabs 2–3 run every existing calculation — radar, reference prices, premiums, spikes, candles,
  * forecasts — on it unchanged. Pure functions only; fetching and settings live in src/lib/communityStore.ts.
  *

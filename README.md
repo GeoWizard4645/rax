@@ -69,7 +69,7 @@ functions/api/
   scout/auctions.ts    per-rating price + 7-day baselines + repeat contenders
   market/spikes.ts     spike screen, fair-value model, candles, forecast inputs (?source=rateboard|sample)
   market/rates.ts      Rateboard bid-rate recorder: samples the board into KV, returns coverage + 7-day baselines
-  market/contribute.ts opt-in community market database (D1 `MARKET_DB`): POST an anonymous capture
+  market/contribute.ts community market database (D1 `MARKET_DB`): POST an anonymous capture
   market/community.ts  …and GET it back (summary / sales / auctions / stats, `minReports`) — docs/COMMUNITY-MARKET.md
   intel/schedule.ts    live game schedule from ESPN public scoreboards (Tab 6)
 ```
